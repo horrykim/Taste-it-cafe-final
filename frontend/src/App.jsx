@@ -8,6 +8,7 @@ import {
 import Login from "./pages/Login";
 import OwnerDashboard from "./pages/OwnerDashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
+import MenuManagement from "./pages/MenuManagement";
 
 
 function App() {
@@ -24,6 +25,15 @@ function App() {
           element={
             <ProtectedRoute>
               <OwnerDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        <Route
+          path="/menu"
+        element={
+            <ProtectedRoute>
+              <MenuManagement />
             </ProtectedRoute>
           }
         />
