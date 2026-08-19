@@ -5,6 +5,9 @@ require("dotenv").config();
 const pool = require("./config/database");
 const authRoutes = require("./routes/auth");
 
+const menuRoutes = require("./routes/menu");
+
+const inventoryRoutes = require("./routes/inventory");
 
 const app = express();
 
@@ -18,6 +21,8 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/api/auth", authRoutes);
+app.use("/api/menu", menuRoutes);
+app.use("/api/inventory", inventoryRoutes);
 
 // ==========================================
 // TEST ROUTE

@@ -1,7 +1,9 @@
-import { useState } from "react";
-import Sidebar from "../components/Sidebar";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import api from "../services/api";
 
 function MenuManagement() {
+  const navigate = useNavigate();
 
   // ==========================================
   // STATE
@@ -12,6 +14,8 @@ function MenuManagement() {
 
   const [menuItems, setMenuItems] = useState([]);
 
+  const [editingId, setEditingId] = useState(null);
+
   const [form, setForm] = useState({
     item_name: "",
     description: "",
@@ -19,8 +23,27 @@ function MenuManagement() {
     status: "available",
   });
 
-  const [editingId, setEditingId] = useState(null);
+  const [message, setMessage] = useState("");
 
+  // ==========================================
+  // GET MENU ITEMS
+  // ==========================================
+
+  const fetchMenuItems = async () => {
+    try {
+      const response = await api.get("/menu");
+
+      setMenuItems(response.data.menuItems || []);
+    } catch (error) {
+      console.error("Error loading menu items:", error);
+
+      setMessage("Unable to load menu items.");
+    }
+  };
+
+  useEffect(() => {
+    fetchMenuItems();
+  }, []);
 
   // ==========================================
   // HANDLE INPUT
@@ -29,18 +52,18 @@ function MenuManagement() {
   const handleChange = (e) => {
     const { name, value } = e.target;
 
-    setForm((prev) => ({
-      ...prev,
+    setForm({
+      ...form,
       [name]: value,
-    }));
+    });
   };
 
-
   // ==========================================
-  // RESET FORM
+  // OPEN ADD FORM
   // ==========================================
 
-  const resetForm = () => {
+  const handleAdd = () => {
+    setEditingId(null);
 
     setForm({
       item_name: "",
@@ -49,109 +72,150 @@ function MenuManagement() {
       status: "available",
     });
 
-    setEditingId(null);
-    setShowForm(false);
+    setMessage("");
+    setShowForm(true);
   };
 
-
   // ==========================================
-  // ADD / UPDATE MENU ITEM
-  // ==========================================
-
-  const handleSubmit = (e) => {
-
-    e.preventDefault();
-
-    if (!form.item_name.trim()) {
-      alert("Please enter a menu item name.");
-      return;
-    }
-
-    if (!form.price || Number(form.price) < 0) {
-      alert("Please enter a valid price.");
-      return;
-    }
-
-
-    // UPDATE
-
-    if (editingId !== null) {
-
-      setMenuItems((prev) =>
-        prev.map((item) =>
-          item.id === editingId
-            ? {
-                ...item,
-                item_name: form.item_name,
-                description: form.description,
-                price: Number(form.price),
-                status: form.status,
-              }
-            : item
-        )
-      );
-
-      resetForm();
-      return;
-    }
-
-
-    // ADD
-
-    const newItem = {
-      id: Date.now(),
-      item_name: form.item_name,
-      description: form.description,
-      price: Number(form.price),
-      status: form.status,
-    };
-
-    setMenuItems((prev) => [
-      ...prev,
-      newItem,
-    ]);
-
-    resetForm();
-  };
-
-
-  // ==========================================
-  // EDIT
+  // OPEN EDIT FORM
   // ==========================================
 
   const handleEdit = (item) => {
+    setEditingId(item.id);
 
     setForm({
       item_name: item.item_name,
-      description: item.description,
+      description: item.description || "",
       price: item.price,
       status: item.status,
     });
 
-    setEditingId(item.id);
+    setMessage("");
     setShowForm(true);
   };
 
+  // ==========================================
+  // CREATE / UPDATE
+  // ==========================================
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+
+    setMessage(
+      editingId
+        ? "Updating menu item..."
+        : "Saving menu item..."
+    );
+
+    try {
+      const menuData = {
+        item_name: form.item_name,
+        description: form.description,
+        price: Number(form.price),
+        status: form.status,
+      };
+
+      let response;
+
+      // UPDATE
+      if (editingId) {
+        response = await api.put(
+          `/menu/${editingId}`,
+          menuData
+        );
+      }
+
+      // CREATE
+      else {
+        response = await api.post(
+          "/menu",
+          menuData
+        );
+      }
+
+      console.log("MENU RESPONSE:", response.data);
+
+      setMessage(
+        editingId
+          ? "Menu item updated successfully!"
+          : "Menu item added successfully!"
+      );
+
+      // Reset form
+      setForm({
+        item_name: "",
+        description: "",
+        price: "",
+        status: "available",
+      });
+
+      setEditingId(null);
+      setShowForm(false);
+
+      // Reload data from Supabase
+      await fetchMenuItems();
+
+    } catch (error) {
+      console.error("MENU ERROR:", error);
+
+      setMessage(
+        error.response?.data?.message ||
+          "Unable to save menu item."
+      );
+    }
+  };
 
   // ==========================================
   // DELETE
   // ==========================================
 
-  const handleDelete = (id) => {
-
-    const confirmDelete = window.confirm(
+  const handleDelete = async (id) => {
+    const confirmed = window.confirm(
       "Are you sure you want to delete this menu item?"
     );
 
-    if (!confirmDelete) {
+    if (!confirmed) {
       return;
     }
 
-    setMenuItems((prev) =>
-      prev.filter((item) => item.id !== id)
-    );
+    try {
+      setMessage("Deleting menu item...");
+
+      await api.delete(`/menu/${id}`);
+
+      setMessage(
+        "Menu item deleted successfully!"
+      );
+
+      await fetchMenuItems();
+
+    } catch (error) {
+      console.error("DELETE ERROR:", error);
+
+      setMessage(
+        error.response?.data?.message ||
+          "Unable to delete menu item."
+      );
+    }
   };
 
+  // ==========================================
+  // CANCEL FORM
+  // ==========================================
+
+  const handleCancel = () => {
+    setShowForm(false);
+    setEditingId(null);
+
+    setForm({
+      item_name: "",
+      description: "",
+      price: "",
+      status: "available",
+    });
+
+    setMessage("");
+  };
 
   // ==========================================
   // SEARCH
@@ -163,20 +227,118 @@ function MenuManagement() {
       .includes(search.toLowerCase())
   );
 
+  // ==========================================
+  // LOGOUT
+  // ==========================================
 
-  // ==========================================
-  // UI
-  // ==========================================
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+
+    navigate("/");
+  };
 
   return (
     <div className="min-h-screen bg-gray-100 flex">
 
       {/* ==========================================
-          SHARED SIDEBAR
+          SIDEBAR
       ========================================== */}
 
-      <Sidebar />
+      <aside className="w-64 bg-white border-r border-gray-300 min-h-screen flex flex-col">
 
+        {/* BRAND */}
+
+        <div className="p-6 border-b border-gray-300">
+
+          <h1 className="text-2xl font-bold text-pink-500">
+            Taste It Café
+          </h1>
+
+          <p className="text-sm text-gray-500 mt-1">
+            Café Management System
+          </p>
+
+        </div>
+
+        {/* NAVIGATION */}
+
+        <nav className="flex-1 p-4">
+
+          <p className="text-xs font-semibold text-gray-400 uppercase px-3 mb-3">
+            Main Menu
+          </p>
+
+          {/* DASHBOARD */}
+
+          <button
+            onClick={() => navigate("/dashboard")}
+            className="w-full text-left px-4 py-3 rounded-lg text-gray-600 hover:bg-pink-50 hover:text-pink-500 mb-1 transition"
+          >
+            Dashboard
+          </button>
+
+          {/* MENU */}
+
+          <button
+            onClick={() => navigate("/menu")}
+            className="w-full text-left px-4 py-3 rounded-lg bg-pink-100 text-pink-600 font-semibold mb-1"
+          >
+            Menu Management
+          </button>
+
+          {/* INVENTORY */}
+
+          <button
+            onClick={() => navigate("/inventory")}
+            className="w-full text-left px-4 py-3 rounded-lg text-gray-600 hover:bg-pink-50 hover:text-pink-500 mb-1 transition"
+          >
+            Inventory Management
+          </button>
+
+          {/* SALES */}
+
+          <button
+            onClick={() => navigate("/sales")}
+            className="w-full text-left px-4 py-3 rounded-lg text-gray-600 hover:bg-pink-50 hover:text-pink-500 mb-1 transition"
+          >
+            Sales
+          </button>
+
+          {/* REPORTS */}
+
+          <button
+            onClick={() => navigate("/reports")}
+            className="w-full text-left px-4 py-3 rounded-lg text-gray-600 hover:bg-pink-50 hover:text-pink-500 mb-1 transition"
+          >
+            Reports
+          </button>
+
+          {/* SETTINGS */}
+
+          <button
+            onClick={() => navigate("/settings")}
+            className="w-full text-left px-4 py-3 rounded-lg text-gray-600 hover:bg-pink-50 hover:text-pink-500 mb-1 transition"
+          >
+            Settings
+          </button>
+
+        </nav>
+
+        {/* LOGOUT */}
+
+        <div className="p-4 border-t border-gray-300">
+
+          <button
+            onClick={handleLogout}
+            className="w-full text-left px-4 py-3 rounded-lg text-red-500 hover:bg-red-50 transition"
+          >
+            Log Out
+          </button>
+
+        </div>
+
+      </aside>
 
       {/* ==========================================
           MAIN CONTENT
@@ -184,10 +346,7 @@ function MenuManagement() {
 
       <main className="flex-1 p-8 overflow-auto">
 
-
-        {/* ==========================================
-            HEADER
-        ========================================== */}
+        {/* HEADER */}
 
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
 
@@ -203,26 +362,24 @@ function MenuManagement() {
 
           </div>
 
-
           <button
-            onClick={() => {
-
-              if (showForm) {
-                resetForm();
-              } else {
-                setShowForm(true);
-              }
-
-            }}
+            onClick={handleAdd}
             className="bg-pink-500 hover:bg-pink-600 text-white px-5 py-3 rounded-lg font-semibold transition"
           >
-            {showForm
-              ? "Cancel"
-              : "+ Add Menu Item"}
+            + Add Menu Item
           </button>
 
         </div>
 
+        {/* MESSAGE */}
+
+        {message && (
+
+          <div className="bg-white border border-gray-200 rounded-lg p-4 mb-6 text-gray-700">
+            {message}
+          </div>
+
+        )}
 
         {/* ==========================================
             ADD / EDIT FORM
@@ -235,17 +392,19 @@ function MenuManagement() {
             className="bg-white rounded-xl shadow-sm border p-6 mb-6"
           >
 
-            <h2 className="text-xl font-semibold text-gray-800 mb-6">
+            <div className="flex justify-between items-center mb-6">
 
-              {editingId !== null
-                ? "Edit Menu Item"
-                : "Add Menu Item"}
+              <h2 className="text-xl font-semibold text-gray-800">
 
-            </h2>
+                {editingId
+                  ? "Edit Menu Item"
+                  : "Add Menu Item"}
 
+              </h2>
+
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-
 
               {/* ITEM NAME */}
 
@@ -262,10 +421,10 @@ function MenuManagement() {
                   onChange={handleChange}
                   placeholder="Example: Iced Latte"
                   className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-pink-400"
+                  required
                 />
 
               </div>
-
 
               {/* PRICE */}
 
@@ -275,27 +434,19 @@ function MenuManagement() {
                   Price
                 </label>
 
-                <div className="relative">
-
-                  <span className="absolute left-4 top-3 text-gray-500">
-                    ₱
-                  </span>
-
-                  <input
-                    type="number"
-                    name="price"
-                    value={form.price}
-                    onChange={handleChange}
-                    min="0"
-                    step="0.01"
-                    placeholder="0.00"
-                    className="w-full border border-gray-300 rounded-lg pl-9 pr-4 py-3 focus:outline-none focus:ring-2 focus:ring-pink-400"
-                  />
-
-                </div>
+                <input
+                  type="number"
+                  name="price"
+                  value={form.price}
+                  onChange={handleChange}
+                  placeholder="0.00"
+                  min="0"
+                  step="0.01"
+                  className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-pink-400"
+                  required
+                />
 
               </div>
-
 
               {/* DESCRIPTION */}
 
@@ -315,7 +466,6 @@ function MenuManagement() {
                 />
 
               </div>
-
 
               {/* STATUS */}
 
@@ -346,26 +496,24 @@ function MenuManagement() {
 
             </div>
 
-
             {/* FORM BUTTONS */}
 
             <div className="flex justify-end gap-3 mt-6">
 
               <button
                 type="button"
-                onClick={resetForm}
-                className="px-5 py-3 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition"
+                onClick={handleCancel}
+                className="px-5 py-3 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50"
               >
                 Cancel
               </button>
 
-
               <button
                 type="submit"
-                className="px-5 py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-lg font-semibold transition"
+                className="px-5 py-3 bg-pink-500 hover:bg-pink-600 text-white rounded-lg font-semibold"
               >
 
-                {editingId !== null
+                {editingId
                   ? "Update Menu Item"
                   : "Save Menu Item"}
 
@@ -376,7 +524,6 @@ function MenuManagement() {
           </form>
 
         )}
-
 
         {/* ==========================================
             SEARCH
@@ -391,22 +538,20 @@ function MenuManagement() {
           <input
             type="text"
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(e) =>
+              setSearch(e.target.value)
+            }
             placeholder="Search menu items..."
             className="w-full border border-gray-300 rounded-lg px-4 py-3 focus:outline-none focus:ring-2 focus:ring-pink-400"
           />
 
         </div>
 
-
         {/* ==========================================
             MENU TABLE
         ========================================== */}
 
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-
-
-          {/* TABLE HEADER */}
 
           <div className="p-6 border-b">
 
@@ -415,18 +560,13 @@ function MenuManagement() {
             </h2>
 
             <p className="text-sm text-gray-500 mt-1">
-
               {filteredItems.length} menu item
               {filteredItems.length !== 1
                 ? "s"
                 : ""}
-
             </p>
 
           </div>
-
-
-          {/* TABLE */}
 
           <div className="overflow-x-auto">
 
@@ -460,7 +600,6 @@ function MenuManagement() {
 
               </thead>
 
-
               <tbody>
 
                 {filteredItems.length === 0 ? (
@@ -469,17 +608,9 @@ function MenuManagement() {
 
                     <td
                       colSpan="5"
-                      className="px-6 py-16 text-center"
+                      className="px-6 py-12 text-center text-gray-400"
                     >
-
-                      <p className="text-lg font-medium text-gray-400">
-                        No menu items found
-                      </p>
-
-                      <p className="text-sm text-gray-400 mt-1">
-                        Click "Add Menu Item" to create your first item.
-                      </p>
-
+                      No menu items found.
                     </td>
 
                   </tr>
@@ -493,51 +624,31 @@ function MenuManagement() {
                       className="border-t hover:bg-gray-50"
                     >
 
-                      {/* NAME */}
-
-                      <td className="px-6 py-4">
-
-                        <p className="font-semibold text-gray-800">
-                          {item.item_name}
-                        </p>
-
+                      <td className="px-6 py-4 font-medium text-gray-800">
+                        {item.item_name}
                       </td>
-
-
-                      {/* DESCRIPTION */}
 
                       <td className="px-6 py-4 text-gray-600">
-                        {item.description || "—"}
+                        {item.description || "-"}
                       </td>
 
-
-                      {/* PRICE */}
-
-                      <td className="px-6 py-4 font-semibold text-gray-800">
+                      <td className="px-6 py-4 text-gray-800">
                         ₱{Number(item.price).toFixed(2)}
                       </td>
 
-
-                      {/* STATUS */}
-
                       <td className="px-6 py-4">
 
-                        {item.status === "available" ? (
-
-                          <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-green-100 text-green-700">
-                            Available
-                          </span>
-
-                        ) : (
-
-                          <span className="inline-flex px-3 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-700">
-                            Unavailable
-                          </span>
-
-                        )}
+                        <span
+                          className={`px-3 py-1 rounded-full text-sm font-medium ${
+                            item.status === "available"
+                              ? "bg-green-100 text-green-700"
+                              : "bg-red-100 text-red-700"
+                          }`}
+                        >
+                          {item.status}
+                        </span>
 
                       </td>
-
 
                       {/* ACTIONS */}
 
@@ -546,16 +657,19 @@ function MenuManagement() {
                         <div className="flex gap-2">
 
                           <button
-                            onClick={() => handleEdit(item)}
-                            className="px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded-lg"
+                            onClick={() =>
+                              handleEdit(item)
+                            }
+                            className="px-3 py-2 bg-blue-100 text-blue-600 hover:bg-blue-200 rounded-lg text-sm font-medium"
                           >
                             Edit
                           </button>
 
-
                           <button
-                            onClick={() => handleDelete(item.id)}
-                            className="px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg"
+                            onClick={() =>
+                              handleDelete(item.id)
+                            }
+                            className="px-3 py-2 bg-red-100 text-red-600 hover:bg-red-200 rounded-lg text-sm font-medium"
                           >
                             Delete
                           </button>
