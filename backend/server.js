@@ -1,13 +1,23 @@
-const express = require("express");
-const cors = require("cors");
+
+// ==========================================
+// LOAD ENVIRONMENT VARIABLES FIRST
+// ==========================================
+
 require("dotenv").config();
 
+const express = require("express");
+const cors = require("cors");
+
 const pool = require("./config/database");
+
 const authRoutes = require("./routes/auth");
-
 const menuRoutes = require("./routes/menu");
-
 const inventoryRoutes = require("./routes/inventory");
+const dashboardRoutes = require("./routes/dashboard");
+
+// ==========================================
+// CREATE APP
+// ==========================================
 
 const app = express();
 
@@ -18,11 +28,20 @@ const PORT = process.env.PORT || 5000;
 // ==========================================
 
 app.use(cors());
+
 app.use(express.json());
 
+// ==========================================
+// API ROUTES
+// ==========================================
+
 app.use("/api/auth", authRoutes);
+
 app.use("/api/menu", menuRoutes);
+
 app.use("/api/inventory", inventoryRoutes);
+
+app.use("/api/dashboard", dashboardRoutes);
 
 // ==========================================
 // TEST ROUTE
@@ -64,5 +83,7 @@ app.get("/api/test-db", async (req, res) => {
 // ==========================================
 
 app.listen(PORT, () => {
-  console.log(`Taste It Cafe backend running on http://localhost:${PORT}`);
+  console.log(
+    `Taste It Cafe backend running on http://localhost:${PORT}`
+  );
 });
