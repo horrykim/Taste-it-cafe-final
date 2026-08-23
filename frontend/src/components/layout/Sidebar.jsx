@@ -1,14 +1,17 @@
-import { LogOut, X } from "lucide-react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { ChevronDown, ChevronRight, LogOut, X } from "lucide-react";
+import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { navigationByRole } from "../../routes/navigation";
 import { useBranch } from "../../context/BranchContext";
 
 function Sidebar({ open, onClose }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { currentUser, logout } = useAuth();
   const { clearBranch } = useBranch();
   const navigation = navigationByRole[currentUser.role] ?? [];
+  const [expandedGroups, setExpandedGroups] = useState({});
 
   const handleLogout = () => {
     clearBranch();
@@ -30,11 +33,13 @@ function Sidebar({ open, onClose }) {
         <nav aria-label="Main navigation" className="flex-1 overflow-y-auto px-4 py-6">
           <p className="mb-3 px-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-taste-muted">Main menu</p>
           <div className="space-y-1">
-            {navigation.map(({ icon: Icon, label, path }) => (
-              <NavLink key={path} to={path} onClick={onClose} end={path === "/app/dashboard"} className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-taste-purple ${isActive ? "bg-taste-teal/30 text-taste-text" : "text-slate-600 hover:bg-slate-50 hover:text-taste-text"}`}>
-                <Icon size={19} strokeWidth={1.9} /><span>{label}</span>
-              </NavLink>
-            ))}
+            {navigation.map(({ icon: Icon, label, path, children }) => {
+              if (!children) return <NavLink key={path} to={path} onClick={onClose} end={path === "/app/dashboard"} className={({ isActive }) => `flex items-center gap-3 rounded-xl px-3 py-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-taste-purple ${isActive ? "bg-taste-teal/30 text-taste-text" : "text-slate-600 hover:bg-slate-50 hover:text-taste-text"}`}><Icon size={19} strokeWidth={1.9} /><span>{label}</span></NavLink>;
+              const isGroupActive = children.some((child) => location.pathname === child.path);
+              const isExpanded = isGroupActive || expandedGroups[label];
+              const Chevron = isExpanded ? ChevronDown : ChevronRight;
+              return <div key={label}><button type="button" aria-expanded={isExpanded} aria-controls={`${label.toLowerCase().replaceAll(" ", "-")}-links`} onClick={() => setExpandedGroups((current) => ({ ...current, [label]: !isExpanded }))} className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-taste-purple ${isGroupActive ? "bg-taste-teal/20 text-taste-text" : "text-slate-600 hover:bg-slate-50 hover:text-taste-text"}`}><Icon size={19} strokeWidth={1.9} /><span className="flex-1">{label}</span><Chevron size={17} aria-hidden="true" /></button>{isExpanded && <div id={`${label.toLowerCase().replaceAll(" ", "-")}-links`} className="mt-1 space-y-1 border-l border-taste-border pl-4">{children.map((child) => <NavLink key={child.path} to={child.path} onClick={onClose} className={({ isActive }) => `block rounded-lg px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-taste-purple ${isActive ? "bg-taste-teal/30 font-semibold text-taste-text" : "text-slate-600 hover:bg-slate-50 hover:text-taste-text"}`}>{child.label}</NavLink>)}</div>}</div>;
+            })}
           </div>
         </nav>
         <div className="border-t border-taste-border p-4">

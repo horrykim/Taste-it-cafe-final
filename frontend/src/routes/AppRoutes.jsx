@@ -8,13 +8,19 @@ import PlaceholderPage from "../pages/PlaceholderPage";
 import DesignSystemShowcase from "../pages/DesignSystemShowcase";
 import OwnerDashboard from "../features/dashboard/OwnerDashboard";
 import MenuManagement from "../features/menu/MenuManagement";
+import InventoryManagement from "../features/inventory/InventoryManagement";
+import Reconciliation from "../features/reconciliation/Reconciliation";
+import POS from "../features/pos/POS";
+import Sales from "../features/sales/Sales";
+import BranchManagement from "../features/branches/BranchManagement";
+import StaffManagement from "../features/staff/StaffManagement";
+import Reports from "../features/reports/Reports";
 
 const placeholders = {
   dashboard: ["Dashboard", "Your branch-level operational overview will be introduced in the dashboard phase."],
-  pos: ["Point of Sale", "The branch-restricted Staff transaction workflow will be implemented in the POS phase."],
+  pos: ["Point of Sale", "The branch-scoped transaction workflow will be implemented in the POS phase."],
   menu: ["Menu Management", "Menu, category, and recipe workflows will be introduced in their dedicated phase."],
   inventory: ["Inventory", "Branch inventory monitoring will be implemented in the inventory phase."],
-  reconciliation: ["Inventory Reconciliation", "The stock verification workflow will be implemented in the reconciliation phase."],
   sales: ["Sales", "Sales history will be implemented with appropriate Owner and Staff visibility."],
   reports: ["Reports", "Approved sales, inventory, and reconciliation reporting will be implemented in the reports phase."],
   aiReports: ["AI Business Reports", "Weekly reporting insights will be implemented without forecasting or recommendations."],
@@ -39,15 +45,15 @@ function AppRoutes() {
       <Route path="/branches" element={<ProtectedRoute allowedRoles={["OWNER"]}><BranchSelection /></ProtectedRoute>} />
       <Route element={<ProtectedRoute requireBranchForOwner><AppLayout /></ProtectedRoute>}>
         <Route path="/app/dashboard" element={<DashboardRoute />} />
-        <Route path="/app/inventory" element={placeholder(placeholders.inventory)} />
-        <Route path="/app/reconciliation" element={placeholder(placeholders.reconciliation)} />
-        <Route path="/app/sales" element={placeholder(placeholders.sales)} />
-        <Route path="/app/pos" element={<ProtectedRoute allowedRoles={["STAFF"]}>{placeholder(placeholders.pos)}</ProtectedRoute>} />
+        <Route path="/app/inventory" element={<InventoryManagement />} />
+        <Route path="/app/reconciliation" element={<Reconciliation />} />
+        <Route path="/app/sales" element={<ProtectedRoute allowedRoles={["OWNER", "STAFF"]}><Sales /></ProtectedRoute>} />
+        <Route path="/app/pos" element={<ProtectedRoute allowedRoles={["OWNER", "STAFF"]}><POS /></ProtectedRoute>} />
         <Route path="/app/menu" element={<MenuManagement />} />
-        <Route path="/app/reports" element={<ProtectedRoute allowedRoles={["OWNER"]}>{placeholder(placeholders.reports)}</ProtectedRoute>} />
+        <Route path="/app/reports" element={<ProtectedRoute allowedRoles={["OWNER"]}><Reports /></ProtectedRoute>} />
         <Route path="/app/reports/ai" element={<ProtectedRoute allowedRoles={["OWNER"]}>{placeholder(placeholders.aiReports)}</ProtectedRoute>} />
-        <Route path="/app/branches" element={<ProtectedRoute allowedRoles={["OWNER"]}>{placeholder(placeholders.branches)}</ProtectedRoute>} />
-        <Route path="/app/staff" element={<ProtectedRoute allowedRoles={["OWNER"]}>{placeholder(placeholders.staff)}</ProtectedRoute>} />
+        <Route path="/app/branches" element={<ProtectedRoute allowedRoles={["OWNER"]}><BranchManagement /></ProtectedRoute>} />
+        <Route path="/app/staff" element={<ProtectedRoute allowedRoles={["OWNER"]}><StaffManagement /></ProtectedRoute>} />
         <Route path="/app/design-system" element={<ProtectedRoute allowedRoles={["OWNER"]}><DesignSystemShowcase /></ProtectedRoute>} />
       </Route>
       <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />

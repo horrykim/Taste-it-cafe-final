@@ -1,40 +1,36 @@
-const menuDataByBranch = {
-  babag: {
-    categories: [
-      { id: "burgers", name: "Burgers", status: "ACTIVE" },
-      { id: "meals", name: "Meals", status: "ACTIVE" },
-      { id: "pastries", name: "Pastries", status: "ACTIVE" },
-      { id: "drinks", name: "Drinks", status: "ACTIVE" },
-      { id: "combos", name: "Combos", status: "ACTIVE" },
-    ],
-    items: [
-      { id: "bab-classic-burger", name: "Classic Burger", categoryId: "burgers", price: 145, description: "A grilled beef patty with fresh greens and house sauce.", status: "ACTIVE", branchIds: ["babag"], recipeId: "recipe-classic-burger" },
-      { id: "bab-chicken-sandwich", name: "Chicken Sandwich", categoryId: "burgers", price: 165, description: "Crispy chicken, lettuce, and signature dressing in a toasted bun.", status: "ACTIVE", branchIds: ["babag"], recipeId: "recipe-chicken-sandwich" },
-      { id: "bab-combo-meal", name: "Classic Burger Combo", categoryId: "combos", price: 220, description: "Classic Burger served with fries and a chilled drink.", status: "ACTIVE", branchIds: ["babag"], recipeId: "recipe-classic-combo" },
-      { id: "bab-ube-pandesal", name: "Ube Cheese Pandesal", categoryId: "pastries", price: 85, description: "Soft ube-filled bread with a creamy cheese center.", status: "INACTIVE", branchIds: ["babag"], recipeId: "recipe-ube-pandesal" },
-      { id: "bab-iced-latte", name: "Iced Latte", categoryId: "drinks", price: 130, description: "Cold espresso and milk over ice.", status: "ACTIVE", branchIds: ["babag"], recipeId: "recipe-iced-latte" },
-    ],
-  },
-  marigondon: {
-    categories: [
-      { id: "burgers", name: "Burgers", status: "ACTIVE" },
-      { id: "meals", name: "Meals", status: "ACTIVE" },
-      { id: "b1t1", name: "B1T1", status: "ACTIVE" },
-      { id: "pastries", name: "Pastries", status: "ACTIVE" },
-      { id: "drinks", name: "Drinks", status: "ACTIVE" },
-    ],
-    items: [
-      { id: "mar-double-burger", name: "Double Burger", categoryId: "burgers", price: 195, description: "Two grilled patties with cheese, greens, and house sauce.", status: "ACTIVE", branchIds: ["marigondon"], recipeId: "recipe-double-burger" },
-      { id: "mar-b1t1-burger", name: "B1T1 Burger", categoryId: "b1t1", price: 250, description: "Two classic burgers prepared as one value menu item.", status: "ACTIVE", branchIds: ["marigondon"], recipeId: "recipe-b1t1-burger" },
-      { id: "mar-chicken-meal", name: "Chicken Meal", categoryId: "meals", price: 185, description: "Crispy chicken with rice and a refreshing drink.", status: "ACTIVE", branchIds: ["marigondon"], recipeId: "recipe-chicken-meal" },
-      { id: "mar-brownie", name: "Chocolate Brownie", categoryId: "pastries", price: 95, description: "Rich, fudgy chocolate brownie baked in small batches.", status: "ACTIVE", branchIds: ["marigondon"], recipeId: "recipe-brownie" },
-      { id: "mar-fruit-tea", name: "Passion Fruit Tea", categoryId: "drinks", price: 120, description: "Bright passion fruit tea served cold.", status: "INACTIVE", branchIds: ["marigondon"], recipeId: "recipe-fruit-tea" },
-    ],
-  },
+const MENU_STORAGE_KEY = "tasteit_menu";
+const ownerOnly = new Set(["OWNER"]);
+const availabilityRoles = new Set(["OWNER", "STAFF"]);
+const image = (label, fill) => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400"><rect width="640" height="400" fill="${fill}"/><circle cx="320" cy="172" r="76" fill="#fff" fill-opacity=".88"/><path d="M270 170h100v18H270zM284 145h72v20h-72zM288 192h64v18h-64z" fill="#334155"/><text x="320" y="320" text-anchor="middle" font-family="Arial, sans-serif" font-size="28" font-weight="700" fill="#fff">${label}</text></svg>`)}`;
+
+const initialMenuDataByBranch = {
+  babag: { categories: [{ id: "burgers", name: "Burgers", status: "ACTIVE" }, { id: "meals", name: "Meals", status: "ACTIVE" }, { id: "pastries", name: "Pastries", status: "ACTIVE" }, { id: "drinks", name: "Drinks", status: "ACTIVE" }, { id: "combos", name: "Combos", status: "ACTIVE" }], items: [
+    { id: "bab-classic-burger", branchId: "babag", recipeId: "recipe-bab-classic-burger", name: "Classic Burger", categoryId: "burgers", price: 145, description: "A grilled beef patty with fresh greens and house sauce.", imageUrl: image("Classic Burger", "#D17FB2"), status: "ACTIVE", available: true, recipe: [{ ingredientId: "bab-bun", quantity: 1, unit: "pc" }, { ingredientId: "bab-beef-patty", quantity: 1, unit: "pc" }, { ingredientId: "bab-cheese", quantity: 1, unit: "slice" }] },
+    { id: "bab-chicken-sandwich", branchId: "babag", recipeId: "recipe-bab-chicken-sandwich", name: "Chicken Sandwich", categoryId: "burgers", price: 165, description: "Crispy chicken, lettuce, and signature dressing in a toasted bun.", imageUrl: null, status: "ACTIVE", available: true, recipe: [{ ingredientId: "bab-bun", quantity: 1, unit: "pc" }, { ingredientId: "bab-chicken", quantity: 1, unit: "pc" }, { ingredientId: "bab-cooking-oil", quantity: 12, unit: "ml" }] },
+    { id: "bab-combo-meal", branchId: "babag", recipeId: "recipe-bab-combo-meal", name: "Classic Burger Combo", categoryId: "combos", price: 220, description: "Classic Burger served with fries and a chilled drink.", imageUrl: null, status: "ACTIVE", available: true, recipe: [{ ingredientId: "bab-bun", quantity: 1, unit: "pc" }, { ingredientId: "bab-beef-patty", quantity: 1, unit: "pc" }, { ingredientId: "bab-fries", quantity: 150, unit: "g" }] },
+    { id: "bab-ube-pandesal", branchId: "babag", recipeId: "recipe-bab-ube-pandesal", name: "Ube Cheese Pandesal", categoryId: "pastries", price: 85, description: "Soft ube-filled bread with a creamy cheese center.", imageUrl: null, status: "INACTIVE", available: false, recipe: [{ ingredientId: "bab-ube", quantity: 45, unit: "g" }, { ingredientId: "bab-cheese", quantity: 1, unit: "slice" }] },
+    { id: "bab-iced-latte", branchId: "babag", recipeId: "recipe-bab-iced-latte", name: "Iced Latte", categoryId: "drinks", price: 130, description: "Cold espresso and milk over ice.", imageUrl: image("Iced Latte", "#7CE1DB"), status: "ACTIVE", available: true, recipe: [{ ingredientId: "bab-coffee", quantity: 18, unit: "g" }, { ingredientId: "bab-milk", quantity: 180, unit: "ml" }] },
+  ] },
+  marigondon: { categories: [{ id: "burgers", name: "Burgers", status: "ACTIVE" }, { id: "meals", name: "Meals", status: "ACTIVE" }, { id: "b1t1", name: "B1T1", status: "ACTIVE" }, { id: "pastries", name: "Pastries", status: "ACTIVE" }, { id: "drinks", name: "Drinks", status: "ACTIVE" }], items: [
+    { id: "mar-double-burger", branchId: "marigondon", recipeId: "recipe-mar-double-burger", name: "Double Burger", categoryId: "burgers", price: 195, description: "Two grilled patties with cheese, greens, and house sauce.", imageUrl: image("Double Burger", "#D17FB2"), status: "ACTIVE", available: true, recipe: [{ ingredientId: "mar-bun", quantity: 1, unit: "pc" }, { ingredientId: "mar-beef-patty", quantity: 2, unit: "pc" }, { ingredientId: "mar-egg", quantity: 1, unit: "pc" }, { ingredientId: "mar-cheese", quantity: 2, unit: "slice" }, { ingredientId: "mar-cooking-oil", quantity: 10, unit: "ml" }] },
+    { id: "mar-b1t1-burger", branchId: "marigondon", recipeId: "recipe-mar-b1t1-burger", name: "B1T1 Burger", categoryId: "b1t1", price: 250, description: "Two classic burgers prepared as one value menu item.", imageUrl: null, status: "ACTIVE", available: true, recipe: [{ ingredientId: "mar-bun", quantity: 2, unit: "pc" }, { ingredientId: "mar-beef-patty", quantity: 2, unit: "pc" }, { ingredientId: "mar-cheese", quantity: 2, unit: "slice" }] },
+    { id: "mar-chicken-meal", branchId: "marigondon", recipeId: "recipe-mar-chicken-meal", name: "Chicken Meal", categoryId: "meals", price: 185, description: "Crispy chicken with rice and a refreshing drink.", imageUrl: null, status: "ACTIVE", available: true, recipe: [{ ingredientId: "mar-chicken", quantity: 1, unit: "pc" }, { ingredientId: "mar-rice", quantity: 180, unit: "g" }, { ingredientId: "mar-cooking-oil", quantity: 15, unit: "ml" }] },
+    { id: "mar-brownie", branchId: "marigondon", recipeId: "recipe-mar-brownie", name: "Chocolate Brownie", categoryId: "pastries", price: 95, description: "Rich, fudgy chocolate brownie baked in small batches.", imageUrl: image("Chocolate Brownie", "#7CE1DB"), status: "ACTIVE", available: true, recipe: [{ ingredientId: "mar-brownie", quantity: 95, unit: "g" }, { ingredientId: "mar-egg", quantity: 1, unit: "pc" }] },
+    { id: "mar-fruit-tea", branchId: "marigondon", recipeId: "recipe-mar-fruit-tea", name: "Passion Fruit Tea", categoryId: "drinks", price: 120, description: "Bright passion fruit tea served cold.", imageUrl: null, status: "INACTIVE", available: false, recipe: [{ ingredientId: "mar-fruit-tea", quantity: 35, unit: "ml" }, { ingredientId: "mar-tea", quantity: 180, unit: "ml" }] },
+  ] },
 };
 
-export async function getMockMenuData(branchId) {
-  const data = menuDataByBranch[branchId];
-  if (!data) throw new Error("Menu data is unavailable for this branch.");
-  return structuredClone(data);
-}
+function normalizeMenuState(data) { return Object.fromEntries(Object.entries(data).map(([branchId, branch]) => [branchId, { ...branch, items: branch.items.map((item) => ({ ...item, branchId: item.branchId ?? branchId, recipeId: item.recipeId ?? `recipe-${item.id}`, imageUrl: item.imageUrl || null, available: item.status !== "INACTIVE" })) }])); }
+function readMenuState() { try { const stored = JSON.parse(localStorage.getItem(MENU_STORAGE_KEY)); if (stored?.babag && stored?.marigondon) { const normalized = normalizeMenuState(stored); localStorage.setItem(MENU_STORAGE_KEY, JSON.stringify(normalized)); return normalized; } } catch { /* use deterministic data */ } const data = structuredClone(initialMenuDataByBranch); localStorage.setItem(MENU_STORAGE_KEY, JSON.stringify(data)); return data; }
+let menuDataByBranch = readMenuState();
+function writeMenuState() { localStorage.setItem(MENU_STORAGE_KEY, JSON.stringify(menuDataByBranch)); }
+function assertRole(role, roles) { if (!roles.has(role)) throw new Error("You do not have permission for this menu action."); }
+function branchData(branchId) { const data = menuDataByBranch[branchId]; if (!data) throw new Error("Menu data is unavailable for this branch."); return data; }
+function cleanRecipe(recipe, branchId) { const ids = new Set(recipe.map((entry) => entry.ingredientId)); if (ids.size !== recipe.length) throw new Error("An ingredient can only appear once in a recipe."); return recipe.map((entry) => { const quantity = Number(entry.quantity); if (!entry.ingredientId || !Number.isFinite(quantity) || quantity <= 0 || !entry.unit) throw new Error("Recipe ingredients need a valid quantity and matching unit."); if (!entry.ingredientId.startsWith(branchId === "babag" ? "bab-" : "mar-")) throw new Error("Recipe ingredients must belong to the active branch."); return { ingredientId: entry.ingredientId, quantity, unit: entry.unit }; }); }
+
+export async function getMockMenuData(branchId) { return structuredClone(branchData(branchId)); }
+export async function saveMenuItem(branchId, item, { actorRole } = {}) { assertRole(actorRole, ownerOnly); const data = branchData(branchId); const price = Number(item.price); if (!item.name?.trim() || !item.categoryId || !Number.isFinite(price) || price < 0) throw new Error("Name, category, and a valid price are required."); const recipe = cleanRecipe(item.recipe ?? [], branchId); const index = data.items.findIndex((entry) => entry.id === item.id); const id = item.id ?? `${branchId}-menu-${data.items.length + 1}`; const next = { ...item, id, branchId, recipeId: item.recipeId ?? `recipe-${id}`, name: item.name.trim(), description: item.description?.trim() ?? "", imageUrl: item.imageUrl || null, price, status: item.status === "INACTIVE" ? "INACTIVE" : "ACTIVE", available: item.status !== "INACTIVE", recipe }; if (index >= 0) data.items[index] = next; else data.items.unshift(next); writeMenuState(); return structuredClone(next); }
+export async function deleteMenuItem(branchId, id, { actorRole } = {}) { assertRole(actorRole, ownerOnly); const data = branchData(branchId); data.items = data.items.filter((item) => item.id !== id); writeMenuState(); }
+export async function setMenuAvailability(branchId, id, available, { actorRole } = {}) { assertRole(actorRole, availabilityRoles); const item = branchData(branchId).items.find((entry) => entry.id === id); if (!item) throw new Error("Menu item was not found."); item.status = available ? "ACTIVE" : "INACTIVE"; item.available = available; writeMenuState(); return structuredClone(item); }
+export async function saveMenuCategory(branchId, category, { actorRole } = {}) { assertRole(actorRole, ownerOnly); const data = branchData(branchId); const id = category.id ?? `${category.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${data.categories.length + 1}`; const next = { id, name: category.name.trim(), status: "ACTIVE" }; const index = data.categories.findIndex((entry) => entry.id === id); if (index >= 0) data.categories[index] = next; else data.categories.push(next); writeMenuState(); return structuredClone(next); }
+export async function deleteMenuCategory(branchId, id, { actorRole } = {}) { assertRole(actorRole, ownerOnly); const data = branchData(branchId); data.categories = data.categories.filter((category) => category.id !== id); writeMenuState(); }
