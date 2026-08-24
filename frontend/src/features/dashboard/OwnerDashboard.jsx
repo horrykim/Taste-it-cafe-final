@@ -134,7 +134,6 @@ function OwnerDashboard() {
     setError("");
   };
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     let isCurrent = true;
     const load = async () => {
@@ -150,6 +149,7 @@ function OwnerDashboard() {
 
     void load();
     return () => { isCurrent = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBranch?.id]);
 
   const refreshData = async () => {

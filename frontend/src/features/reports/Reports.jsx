@@ -42,7 +42,6 @@ export default function Reports() {
       setLoading(false);
     }
   };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     let isMounted = true;
     const load = async () => {
@@ -54,6 +53,7 @@ export default function Reports() {
     return () => {
       isMounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [period, from, to, branchId]);
   const reset = () => { setPeriod("MONTH"); setFrom(""); setTo(""); setBranchId("ALL"); };
   const title = useMemo(() => reportTypes[reportType], [reportType]);

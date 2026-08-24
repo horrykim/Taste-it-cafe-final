@@ -1,8 +1,4 @@
-<<<<<<< Updated upstream
 @import "tailwindcss";
-=======
-@import "tailwindcss";
-
 @theme {
   --color-taste-teal: #7CE1DB;
   --color-taste-teal-strong: #63cbc5;
@@ -122,4 +118,3 @@ select {
     grid-template-rows: subgrid;
   }
 }
->>>>>>> Stashed changes
