@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+package-lock.json
+backend/node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Env files - NEVER commit secrets
+.env
+backend/.env
+frontend/.env
+*.env
+
+# Logs
+npm-debug.log*
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Misc
+ZIP_mycodes.zip
+*.zip
