@@ -1,475 +1,314 @@
 ﻿import { useEffect, useMemo, useState } from "react";
-import { Minus, Plus, ReceiptText, ShoppingCart, Trash2, Wallet } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useBranch } from "../../context/BranchContext";
-import { Badge, Button, ContentCard, EmptyState, ErrorState, Input, LoadingState, Modal, SearchInput, Select, Toast } from "../../components/ui";
-import { FilterBar, PageHeader } from "../../components/layout/PageHeader";
+import { Button, Card, EmptyState, ErrorState, LoadingState, SearchInput, Toast } from "../../components/ui";
 import PageContainer from "../../components/layout/PageContainer";
 import { createPosTransaction, getPosCatalogData } from "../../services/mock/mockPosService";
-import MenuImage from "../menu/components/MenuImage";
+import { getMockIngredients } from "../../services/mock/mockIngredientService";
+import FilterDropdown from "../menu/components/FilterDropdown";
+import PosCategoryTabs from "./components/PosCategoryTabs";
+import PosProductCard from "./components/PosProductCard";
+import PosItemDetailModal from "./components/PosItemDetailModal";
+import CartPanel from "./components/CartPanel";
+import ReceiptModal from "./components/ReceiptModal";
 
 const money = (value) => `₱${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-function Receipt({ sale, branchName, onClose, onNew }) {
-  return (
-    <Modal
-      open
-      onClose={onClose}
-      title="Digital receipt"
-      footer={
-        <>
-          <Button variant="outline" onClick={onClose}>Close receipt</Button>
-          <Button onClick={onNew}>New transaction</Button>
-        </>
-      }
-    >
-      <div className="space-y-4 text-sm">
-        <div className="text-center">
-          <h3 className="text-lg font-bold text-slate-900">Taste It Cafe</h3>
-          <p className="text-slate-500">{branchName} · {sale.transactionId}</p>
-          <p className="text-slate-500">{new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" }).format(new Date(sale.createdAt))}</p>
-        </div>
-
-        <p>
-          Cashier: <strong>{sale.cashierName}</strong>
-        </p>
-
-        <div className="divide-y divide-taste-border border-y border-taste-border">
-          {sale.items.map((item) => (
-            <div key={`${item.menuItemId}-${item.name}`} className="flex justify-between gap-3 py-3">
-              <span>
-                {item.name} × {item.quantity}
-                <small className="block text-slate-500">{money(item.unitPrice)} each</small>
-              </span>
-              <strong>{money(item.lineTotal)}</strong>
-            </div>
-          ))}
-        </div>
-
-        <div className="space-y-1 text-right">
-          <p>Subtotal: {money(sale.subtotal)}</p>
-          <p className="text-lg font-bold text-slate-900">Total: {money(sale.total)}</p>
-        </div>
-
-        <p>
-          Payment: <strong>{sale.paymentMethod === "GCASH" ? "GCash / QR" : "Cash"}</strong>
-          {sale.paymentReference && <span> · Ref: {sale.paymentReference}</span>}
-        </p>
-      </div>
-    </Modal>
-  );
-}
+// Status is the only filter dropdown here — a POS should stay fast, and
+// category filtering is handled by the tab row instead.
+const STATUS_GROUPS = [{
+  options: [
+    { value: "ALL", label: "All items" },
+    { value: "AVAILABLE", label: "Available", dotColor: "#10B981" },
+    { value: "UNAVAILABLE", label: "Unavailable", dotColor: "#8E8E8E" },
+  ],
+}];
 
 export default function POS() {
   const { currentUser } = useAuth();
   const { currentBranch } = useBranch();
+
   const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [ingredients, setIngredients] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+
+  const [activeCategory, setActiveCategory] = useState("ALL");
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+
+  const [detailItem, setDetailItem] = useState(null);
   const [cart, setCart] = useState([]);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [amountReceived, setAmountReceived] = useState("");
   const [reference, setReference] = useState("");
   const [sale, setSale] = useState(null);
+  const [saleCustomisations, setSaleCustomisations] = useState({});
   const [toast, setToast] = useState({ open: false, message: "", variant: "success" });
 
-  const notify = (message, variant = "success") => {
-    setToast({ open: true, message, variant });
-  };
+  const notify = (message, variant = "success") => setToast({ open: true, message, variant });
 
   const refreshCatalog = async () => {
-    if (!currentBranch?.id) {
-      setData(null);
-      setLoading(false);
-      return;
-    }
-
+    if (!currentBranch?.id) { setData(null); setIsLoading(false); return null; }
     try {
-      setLoading(true);
-      const result = await getPosCatalogData(currentBranch.id);
-      setData(result);
+      setIsLoading(true);
+      // Ingredients are loaded alongside the catalog so cart lines can list
+      // their recipe by name for the allergy / customisation dropdown.
+      const [catalog, ingredientData] = await Promise.all([
+        getPosCatalogData(currentBranch.id),
+        getMockIngredients(currentBranch.id),
+      ]);
+      setData(catalog);
+      setIngredients(ingredientData);
       setError("");
-      return result;
+      return catalog;
     } catch (loadError) {
       setError(loadError.message || "Unable to load the POS catalog.");
       return null;
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
-  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { void refreshCatalog(); }, [currentBranch?.id]);
+
+  // Reset the active tab if the branch changes and that category is gone.
   useEffect(() => {
-    void refreshCatalog();
-  }, [currentBranch?.id]);
+    if (!data || activeCategory === "ALL") return;
+    if (!data.categories.some((category) => category.id === activeCategory)) setActiveCategory("ALL");
+  }, [data, activeCategory]);
+
+  const isItemAvailable = (item) => item.available && item.status === "ACTIVE";
 
   const filteredItems = useMemo(() => {
     if (!data) return [];
-    const term = search.trim().toLowerCase();
-
+    const normalizedSearch = search.trim().toLowerCase();
     return data.items.filter((item) => {
-      const categoryName = data.categories.find((entry) => entry.id === item.categoryId)?.name ?? "";
-      const searchableText = [item.name, item.description, categoryName].join(" ").toLowerCase();
-      const matchesSearch = !term || searchableText.includes(term);
-      const matchesCategory = category === "ALL" || item.categoryId === category;
-      return matchesSearch && matchesCategory;
+      const matchesSearch = !normalizedSearch || `${item.name} ${item.description ?? ""}`.toLowerCase().includes(normalizedSearch);
+      const matchesCategory = activeCategory === "ALL" || item.categoryId === activeCategory;
+      const matchesStatus = statusFilter === "ALL"
+        || (statusFilter === "AVAILABLE" ? isItemAvailable(item) : !isItemAvailable(item));
+      return matchesSearch && matchesCategory && matchesStatus;
     });
-  }, [category, data, search]);
+  }, [data, search, activeCategory, statusFilter]);
+
+  // Per-tab counts, respecting the search + status filters so the numbers
+  // match what each tab would actually show.
+  const categoryCounts = useMemo(() => {
+    if (!data) return {};
+    const normalizedSearch = search.trim().toLowerCase();
+    const base = data.items.filter((item) => {
+      const matchesSearch = !normalizedSearch || `${item.name} ${item.description ?? ""}`.toLowerCase().includes(normalizedSearch);
+      const matchesStatus = statusFilter === "ALL"
+        || (statusFilter === "AVAILABLE" ? isItemAvailable(item) : !isItemAvailable(item));
+      return matchesSearch && matchesStatus;
+    });
+    const counts = { ALL: base.length };
+    base.forEach((item) => { counts[item.categoryId] = (counts[item.categoryId] ?? 0) + 1; });
+    return counts;
+  }, [data, search, statusFilter]);
 
   const subtotal = useMemo(() => cart.reduce((sum, line) => sum + line.price * line.quantity, 0), [cart]);
   const cartCount = useMemo(() => cart.reduce((sum, line) => sum + line.quantity, 0), [cart]);
+
+  // Total quantity per menu item across all lines — drives the badge on the
+  // product tile (an item can appear as several lines with different
+  // ingredient removals).
+  const cartQuantities = useMemo(() => {
+    const quantities = {};
+    cart.forEach((line) => { quantities[line.menuItemId] = (quantities[line.menuItemId] ?? 0) + line.quantity; });
+    return quantities;
+  }, [cart]);
+
   const enteredCash = Number(amountReceived || 0);
   const cashChange = paymentMethod === "CASH" ? Math.max(enteredCash - subtotal, 0) : 0;
   const insufficientCash = paymentMethod === "CASH" && subtotal > 0 && enteredCash < subtotal;
   const hasValidPayment = paymentMethod === "CASH" ? subtotal > 0 && !insufficientCash : Boolean(reference.trim());
   const canComplete = cart.length > 0 && hasValidPayment;
 
-  const addToCart = (item) => {
-    if (!item.available) {
-      notify("This item is currently unavailable.", "warning");
-      return;
-    }
+  // `options` comes from the detail modal (quantity + ingredients removed
+  // up front). Adding straight from a tile's "Add to cart" button passes
+  // nothing, so it defaults to one unmodified item.
+  const addToCart = (item, options = {}) => {
+    if (!isItemAvailable(item)) { notify("This item is currently unavailable.", "warning"); return; }
+    const quantity = Math.max(1, options.quantity ?? 1);
+    const removedIngredientIds = options.removedIngredientIds ?? [];
 
     setCart((current) => {
-      const existing = current.find((line) => line.menuItemId === item.id);
-      if (existing) {
-        return current.map((line) => (line.menuItemId === item.id ? { ...line, quantity: line.quantity + 1 } : line));
-      }
-
-      return [...current, { menuItemId: item.id, name: item.name, price: item.price, quantity: 1 }];
+      // Merge into an existing line only when both that line and the
+      // incoming one are unmodified — a customised line stays separate so
+      // its removals aren't silently applied to the newly added item.
+      const canMerge = removedIngredientIds.length === 0;
+      const existing = canMerge
+        ? current.find((line) => line.menuItemId === item.id && (line.removedIngredientIds?.length ?? 0) === 0)
+        : null;
+      if (existing) return current.map((line) => (line.lineId === existing.lineId ? { ...line, quantity: line.quantity + quantity } : line));
+      return [...current, {
+        lineId: `${item.id}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        menuItemId: item.id,
+        name: item.name,
+        price: item.price,
+        quantity,
+        recipe: item.recipe ?? [],
+        removedIngredientIds,
+      }];
     });
+
+    notify(`${quantity} × ${item.name} added to cart.`);
   };
 
-  const updateQuantity = (menuItemId, delta) => {
-    setCart((current) =>
-      current.flatMap((line) => {
-        if (line.menuItemId !== menuItemId) return [line];
-        const nextQuantity = line.quantity + delta;
-        return nextQuantity <= 0 ? [] : [{ ...line, quantity: nextQuantity }];
-      })
-    );
-  };
+  const addFromDetails = (item, options) => { addToCart(item, options); setDetailItem(null); };
 
-  const removeItem = (menuItemId) => {
-    setCart((current) => current.filter((line) => line.menuItemId !== menuItemId));
-  };
+  const updateQuantity = (lineId, delta) => setCart((current) => current.flatMap((line) => {
+    if (line.lineId !== lineId) return [line];
+    const nextQuantity = line.quantity + delta;
+    return nextQuantity <= 0 ? [] : [{ ...line, quantity: nextQuantity }];
+  }));
 
-  const resetPayment = () => {
-    setPaymentMethod("CASH");
-    setAmountReceived("");
-    setReference("");
-  };
+  const removeItem = (lineId) => setCart((current) => current.filter((line) => line.lineId !== lineId));
+
+  // Toggle one ingredient off/on for a single cart line (allergies etc).
+  const toggleIngredient = (lineId, ingredientId) => setCart((current) => current.map((line) => {
+    if (line.lineId !== lineId) return line;
+    const removed = line.removedIngredientIds ?? [];
+    return {
+      ...line,
+      removedIngredientIds: removed.includes(ingredientId)
+        ? removed.filter((id) => id !== ingredientId)
+        : [...removed, ingredientId],
+    };
+  }));
+
+  const resetPayment = () => { setPaymentMethod("CASH"); setAmountReceived(""); setReference(""); };
 
   const handleCompleteSale = async () => {
     if (!currentBranch?.id || !currentUser || !canComplete) return;
-
     try {
+      // Capture removals before the cart is cleared so the receipt can show
+      // them — the mock transaction service doesn't store per-line notes.
+      const customisations = {};
+      cart.forEach((line) => {
+        const removedNames = (line.removedIngredientIds ?? [])
+          .map((id) => ingredients.find((entry) => entry.id === id)?.name)
+          .filter(Boolean);
+        if (removedNames.length) customisations[line.menuItemId] = removedNames;
+      });
+
       const result = await createPosTransaction(
         currentBranch.id,
         cart,
-        {
-          method: paymentMethod,
-          reference: paymentMethod === "GCASH" ? reference.trim() : "",
-        },
+        { method: paymentMethod, reference: paymentMethod === "GCASH" ? reference.trim() : "" },
         currentUser
       );
 
       setSale(result);
+      setSaleCustomisations(customisations);
       setCart([]);
       resetPayment();
-      notify(`Sale completed successfully. Transaction #${result.transactionId}`, "success");
+      notify(`Sale completed. Transaction #${result.transactionId}`, "success");
       await refreshCatalog();
-    } catch (errorItem) {
-      notify(errorItem.message || "Unable to complete the sale.", "danger");
+    } catch (actionError) {
+      notify(actionError.message || "Unable to complete the sale.", "danger");
     }
   };
 
-  if (loading) {
-    return (
-      <PageContainer>
-        <LoadingState label="Loading POS catalog" />
-      </PageContainer>
-    );
-  }
+  const hasFilters = Boolean(search || statusFilter !== "ALL");
+  const clearFilters = () => { setSearch(""); setStatusFilter("ALL"); };
 
-  if (error || !data || !currentBranch) {
-    return (
-      <PageContainer>
-        <ErrorState title="POS unavailable" description={error || "Select a branch to continue."} />
-      </PageContainer>
-    );
-  }
+  if (isLoading) return <PageContainer><LoadingState label="Loading POS catalog" /></PageContainer>;
+  if (error || !data || !currentBranch) return <PageContainer><ErrorState title="POS unavailable" description={error || "Select a branch to continue."} /></PageContainer>;
 
   return (
     <PageContainer>
-      <PageHeader
-        title="Point of Sale"
-        description="Create and record customer transactions."
-        meta={<Badge variant="purple">{currentBranch.name}</Badge>}
-      />
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_390px]">
+        <Card className="overflow-hidden">
+          {/* Category tabs are the primary filter — one tap per category. */}
+          <PosCategoryTabs
+            categories={data.categories}
+            value={activeCategory}
+            onChange={setActiveCategory}
+            counts={categoryCounts}
+          />
 
-      <div className="mt-7 grid gap-6 xl:grid-cols-[minmax(0,1fr)_390px]">
-        <section>
-          <FilterBar className="flex-col gap-3 sm:flex-row">
-            <div className="flex-1">
-              <SearchInput
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search menu item"
-                aria-label="Search menu items"
-              />
-            </div>
-
-            <Select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Filter menu by category" className="sm:max-w-52">
-              <option value="ALL">All categories</option>
-              {data.categories.map((categoryItem) => (
-                <option key={categoryItem.id} value={categoryItem.id}>{categoryItem.name}</option>
-              ))}
-            </Select>
-
-            {(search || category !== "ALL") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setSearch("");
-                  setCategory("ALL");
-                }}
-              >
-                Clear filters
-              </Button>
-            )}
-          </FilterBar>
-
-          <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-            {filteredItems.map((item) => {
-              const categoryName = data.categories.find((entry) => entry.id === item.categoryId)?.name ?? "Category";
-              const isUnavailable = !item.available || item.status !== "ACTIVE";
-
-              return (
-                <ContentCard key={item.id} className="flex h-full flex-col overflow-hidden p-0">
-                  <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100">
-                    <MenuImage imageUrl={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
-                    <div className="absolute left-3 top-3">
-                      <Badge variant={isUnavailable ? "danger" : "success"}>{isUnavailable ? "Out of stock" : "Available"}</Badge>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-1 flex-col p-4">
-                    <span className="inline-flex w-fit rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600">
-                      {categoryName}
-                    </span>
-
-                    <h2 className="mt-3 text-lg font-semibold text-slate-900">{item.name}</h2>
-                    <p className="mt-2 text-base font-bold text-slate-900">{money(item.price)}</p>
-                    <p className="mt-2 text-sm text-slate-500">{item.description}</p>
-
-                    <div className="mt-auto pt-4">
-                      {isUnavailable ? (
-                        <Button className="w-full" size="sm" variant="outline" disabled>
-                          Out of stock
-                        </Button>
-                      ) : (
-                        <Button className="w-full" size="sm" onClick={() => addToCart(item)}>
-                          Add to Cart
-                        </Button>
-                      )}
-                    </div>
-                  </div>
-                </ContentCard>
-              );
-            })}
+          <div className="flex flex-col gap-3 border-b border-taste-border p-5 sm:flex-row sm:items-center">
+            <SearchInput
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search menu items"
+              aria-label="Search menu items"
+              className="sm:max-w-sm"
+            />
+            <FilterDropdown label="All items" value={statusFilter} onChange={setStatusFilter} groups={STATUS_GROUPS} className="sm:w-44" />
+            {hasFilters && <Button variant="ghost" size="sm" onClick={clearFilters}>Clear</Button>}
+            <p className="text-sm text-slate-500 sm:ml-auto">{filteredItems.length} item{filteredItems.length === 1 ? "" : "s"}</p>
           </div>
 
-          {!filteredItems.length && (
-            <div className="mt-5">
+          <div className="p-5">
+            {filteredItems.length ? (
+              <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-4">
+                {filteredItems.map((item) => (
+                  <PosProductCard
+                    key={item.id}
+                    item={item}
+                    inCartQuantity={cartQuantities[item.id] ?? 0}
+                    onAdd={addToCart}
+                    onDetails={setDetailItem}
+                  />
+                ))}
+              </div>
+            ) : (
               <EmptyState
-                title="No menu items found."
-                description="Try changing the search or category filter to see more products."
-                action={
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      setSearch("");
-                      setCategory("ALL");
-                    }}
-                  >
-                    Clear filters
-                  </Button>
-                }
+                title={hasFilters || activeCategory !== "ALL" ? "No matching items" : "No menu items available"}
+                description={hasFilters || activeCategory !== "ALL" ? "Try another category, or clear the search and status filter." : "This branch has no sellable menu items yet."}
+                action={hasFilters ? <Button variant="ghost" onClick={clearFilters}>Clear</Button> : null}
               />
-            </div>
-          )}
-        </section>
-
-        <ContentCard className="h-fit xl:sticky xl:top-6">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-800">
-                <ShoppingCart size={18} />
-              </span>
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Current transaction</h2>
-                <p className="text-xs text-slate-500">{cartCount} item{cartCount === 1 ? "" : "s"}</p>
-              </div>
-            </div>
-
-            {cart.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => setCart([])}>
-                Clear
-              </Button>
             )}
           </div>
+        </Card>
 
-          {cart.length === 0 ? (
-            <div className="mt-6 flex min-h-52 flex-col items-center justify-center rounded-2xl border border-dashed border-taste-border bg-slate-50 px-4 text-center">
-              <ShoppingCart size={28} className="text-slate-400" />
-              <p className="mt-3 text-base font-semibold text-slate-900">Your cart is empty.</p>
-              <p className="mt-1 text-sm text-slate-500">Add an available menu item to begin.</p>
-            </div>
-          ) : (
-            <div className="mt-5 space-y-3">
-              {cart.map((line) => (
-                <div key={line.menuItemId} className="rounded-2xl border border-taste-border bg-slate-50 p-3">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold text-slate-900">{line.name}</p>
-                      <p className="mt-1 text-xs text-slate-500">{money(line.price)} each</p>
-                    </div>
-
-                    <button
-                      type="button"
-                      aria-label={`Remove ${line.name}`}
-                      className="text-slate-400 transition hover:text-rose-600"
-                      onClick={() => removeItem(line.menuItemId)}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
-
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label={`Decrease quantity for ${line.name}`}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-taste-border bg-white text-slate-700"
-                        onClick={() => updateQuantity(line.menuItemId, -1)}
-                      >
-                        <Minus size={16} />
-                      </button>
-                      <span className="min-w-6 text-center text-sm font-semibold text-slate-900">{line.quantity}</span>
-                      <button
-                        type="button"
-                        aria-label={`Increase quantity for ${line.name}`}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg border border-taste-border bg-white text-slate-700"
-                        onClick={() => updateQuantity(line.menuItemId, 1)}
-                      >
-                        <Plus size={16} />
-                      </button>
-                    </div>
-
-                    <div className="text-right">
-                      <p className="text-xs text-slate-500">Line total</p>
-                      <p className="text-base font-bold text-slate-900">{money(line.price * line.quantity)}</p>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {cart.length > 0 && (
-            <div className="mt-6 space-y-4 border-t border-taste-border pt-4">
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between text-slate-600">
-                  <span>Subtotal</span>
-                  <strong>{money(subtotal)}</strong>
-                </div>
-                <div className="flex items-center justify-between text-base font-semibold text-slate-900">
-                  <span>Total</span>
-                  <strong>{money(subtotal)}</strong>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                <label className="block text-sm font-medium text-slate-700">
-                  Payment method
-                  <Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="mt-1.5 w-full" aria-label="Select payment method">
-                    <option value="CASH">Cash</option>
-                    <option value="GCASH">GCash / QR</option>
-                  </Select>
-                </label>
-
-                {paymentMethod === "CASH" ? (
-                  <>
-                    <label className="block text-sm font-medium text-slate-700">
-                      Amount received
-                      <Input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={amountReceived}
-                        onChange={(event) => setAmountReceived(event.target.value)}
-                        className="mt-1.5 w-full"
-                        placeholder="0.00"
-                        aria-label="Cash amount received"
-                      />
-                    </label>
-
-                    <div className="rounded-xl border border-taste-border bg-slate-50 px-3 py-2.5 text-sm">
-                      <div className="flex items-center justify-between text-slate-600">
-                        <span>Change</span>
-                        <strong className="text-slate-900">{money(cashChange)}</strong>
-                      </div>
-                    </div>
-
-                    {insufficientCash && (
-                      <p className="text-sm text-rose-600">Amount received is insufficient.</p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <label className="block text-sm font-medium text-slate-700">
-                      Reference Number
-                      <Input
-                        value={reference}
-                        onChange={(event) => setReference(event.target.value)}
-                        className="mt-1.5 w-full"
-                        placeholder="e.g. 123456789"
-                        aria-label="Payment reference number"
-                      />
-                    </label>
-                    <p className="text-xs leading-5 text-slate-500">Payment is recorded only. Taste It does not process payments.</p>
-                  </>
-                )}
-
-                <div className="flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                  <Wallet size={15} />
-                  <span>Payment is recorded only. Taste It does not process payments.</span>
-                </div>
-              </div>
-
-              <Button className="w-full" size="lg" disabled={!canComplete} onClick={handleCompleteSale}>
-                <ReceiptText size={16} />
-                Complete Sale
-              </Button>
-            </div>
-          )}
-        </ContentCard>
+        <CartPanel
+          cart={cart}
+          ingredients={ingredients}
+          subtotal={subtotal}
+          cartCount={cartCount}
+          paymentMethod={paymentMethod}
+          amountReceived={amountReceived}
+          reference={reference}
+          cashChange={cashChange}
+          insufficientCash={insufficientCash}
+          canComplete={canComplete}
+          onChangePaymentMethod={setPaymentMethod}
+          onChangeAmountReceived={setAmountReceived}
+          onChangeReference={setReference}
+          onUpdateQuantity={updateQuantity}
+          onRemoveItem={removeItem}
+          onToggleIngredient={toggleIngredient}
+          onClearCart={() => setCart([])}
+          onCompleteSale={handleCompleteSale}
+        />
       </div>
 
+      {/* Item detail — opened by tapping a product tile, not by "Add to
+          cart". Lets staff check ingredients and set quantity first. */}
+      {detailItem && (
+        <PosItemDetailModal
+          key={detailItem.id}
+          item={detailItem}
+          categoryName={data.categories.find((category) => category.id === detailItem.categoryId)?.name ?? "Uncategorized"}
+          categoryColor={data.categories.find((category) => category.id === detailItem.categoryId)?.color}
+          ingredients={ingredients}
+          onClose={() => setDetailItem(null)}
+          onAdd={addFromDetails}
+        />
+      )}
+
       {sale && (
-        <Receipt
+        <ReceiptModal
           sale={sale}
           branchName={currentBranch.name}
+          customisations={saleCustomisations}
           onClose={() => setSale(null)}
-          onNew={() => {
-            setSale(null);
-            resetPayment();
-            setCart([]);
-          }}
+          onNew={() => { setSale(null); setSaleCustomisations({}); resetPayment(); setCart([]); }}
         />
       )}
 
