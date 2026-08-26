@@ -1,401 +1,151 @@
-import { useState, useEffect } from "react";
-import { useNavigate, Link } from "react-router-dom";
-import api from "../services/api";
+import { useState } from "react";
+import { Eye, EyeOff, LockKeyhole, UserRound } from "lucide-react";
+import { Navigate, useNavigate } from "react-router-dom";
+import { Alert, Button, Checkbox, FormField, IconButton, Input } from "../components/ui";
+import { useAuth } from "../context/AuthContext";
+import { useBranch } from "../context/BranchContext";
+import tasteItLogo from "../assets/login/taste-it-logo.svg";
+import coffeeCup from "../assets/login/coffee-cup.png";
 
 function Login() {
+  const navigate = useNavigate();
+  const { currentUser, isAuthenticated, login } = useAuth();
+  const { currentBranch } = useBranch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
+  const [errors, setErrors] = useState({});
+  const [authError, setAuthError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
-  const navigate = useNavigate();
+  if (isAuthenticated) return <Navigate to={currentUser.role === "OWNER" && !currentBranch ? "/branches" : "/app/dashboard"} replace />;
 
-  // ======================================================
-  // SESSION: if already logged in, redirect to dashboard
-  // covers direct navigation to / or /login
-  // ======================================================
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    const nextErrors = {};
+    if (!email.trim()) nextErrors.email = "Enter your email address.";
+    else if (!/\S+@\S+\.\S+/.test(email)) nextErrors.email = "Enter a valid email address.";
+    if (!password) nextErrors.password = "Enter your password.";
+    setErrors(nextErrors);
+    setAuthError("");
+    if (Object.keys(nextErrors).length) return;
 
-  useEffect(() => {
-    const token =
-      localStorage.getItem("token") ||
-      localStorage.getItem("accessToken") ||
-      localStorage.getItem("access_token");
-    const userStr = localStorage.getItem("user");
-    if (!token || !userStr) return;
-
-    // quick expiry check - if expired, clear and stay on login
+    setIsSubmitting(true);
     try {
-      const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
-      if (payload.exp && payload.exp * 1000 < Date.now()) {
-        localStorage.removeItem("token");
-        localStorage.removeItem("accessToken");
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("user");
-        return;
-      }
-    } catch {
-      // malformed token -> clear
-      localStorage.removeItem("token");
-      localStorage.removeItem("user");
-      return;
-    }
-
-    // verify session with backend, then redirect
-    let cancelled = false;
-    api
-      .get("/auth/me")
-      .then((res) => {
-        if (cancelled) return;
-        if (res.data?.success) {
-          navigate("/dashboard", { replace: true });
-        }
-      })
-      .catch(() => {
-        if (cancelled) return;
-        // 401 -> token invalid/expired -> clear session and stay on login
-        // do not clear on network error
-        // interceptor will have logged warning
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [navigate]);
-
-  // ======================================================
-  // LOGIN
-  // ======================================================
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-
-    setMessage("");
-    setLoading(true);
-
-    try {
-      const response = await api.post("/auth/login", {
-        email: email.trim().toLowerCase(),
-        password,
-      });
-
-      console.log("LOGIN RESPONSE:", response.data);
-
-      const user = response.data.user;
-      const token = response.data.token;
-
-      // ==================================================
-      // SAVE TOKEN
-      // ==================================================
-
-      localStorage.setItem("token", token);
-
-      // ==================================================
-      // SAVE USER
-      // ==================================================
-
-      localStorage.setItem("user", JSON.stringify(user));
-
-      console.log("LOGGED IN USER:", user);
-
-      // ==================================================
-      // OWNER
-      // ==================================================
-
-      // Owner does NOT select a branch.
-      // Owner goes directly to the main dashboard.
-
-      if (user.role === "owner") {
-        // Remove any old branch selection
-        localStorage.removeItem("selectedBranch");
-        localStorage.removeItem("selectedBranchId");
-        localStorage.removeItem("selectedBranchName");
-        localStorage.removeItem("branchId");
-        localStorage.removeItem("branchName");
-
-        navigate("/dashboard");
-        return;
-      }
-
-      // ==================================================
-      // CASHIER / BRANCH USER
-      // ==================================================
-
-      // Cashier must have an assigned branch.
-
-      if (!user.branch_id) {
-        setMessage(
-          "Your account is not assigned to a branch. Please contact the administrator."
-        );
-
-        localStorage.removeItem("token");
-        localStorage.removeItem("user");
-
-        return;
-      }
-
-      // ==================================================
-      // SAVE CASHIER'S ASSIGNED BRANCH
-      // ==================================================
-
-      const assignedBranch = {
-        id: Number(user.branch_id),
-        branch_name: user.branch_name || "Assigned Branch",
-        location: user.location || "",
-      };
-
-      localStorage.setItem(
-        "selectedBranch",
-        JSON.stringify(assignedBranch)
-      );
-
-      // Also save individual values for compatibility
-      localStorage.setItem(
-        "selectedBranchId",
-        String(assignedBranch.id)
-      );
-
-      localStorage.setItem(
-        "selectedBranchName",
-        assignedBranch.branch_name
-      );
-
-      localStorage.setItem(
-        "branchId",
-        String(assignedBranch.id)
-      );
-
-      localStorage.setItem(
-        "branchName",
-        assignedBranch.branch_name
-      );
-
-      console.log("CASHIER ASSIGNED BRANCH:", assignedBranch);
-
-      // ==================================================
-      // GO TO DASHBOARD
-      // ==================================================
-
-      navigate("/dashboard");
-    } catch (error) {
-      console.error("LOGIN ERROR:", error);
-
-      setMessage(
-        error.response?.data?.message ||
-          "Unable to connect to the server."
-      );
+      const user = await login({ email, password });
+      navigate(user.role === "OWNER" ? "/branches" : "/app/dashboard", { replace: true });
+    } catch (loginError) {
+      setAuthError(loginError.message || "We could not sign you in. Please try again.");
     } finally {
-      setLoading(false);
+      setIsSubmitting(false);
     }
   };
 
-  // ======================================================
-  // LOGIN SCREEN
-  // ======================================================
-
   return (
-    <div className="min-h-screen flex bg-white">
-      {/* ==================================================
-          LEFT PANEL - BRAND
-      ================================================== */}
+    <main className="min-h-screen bg-[#f5f5f3] p-0">
+      <div className="mx-auto flex min-h-screen w-full flex-col overflow-hidden bg-white md:flex-row">
+        <aside className="relative flex w-full flex-col items-center justify-start bg-[#A7D2CF] px-4 py-8 text-center md:w-1/2 md:px-6 lg:px-8">
+          <div className="flex w-full max-w-[500px] flex-col items-center">
+            <img src={tasteItLogo} alt="Taste It logo" className="mb-5 w-[130px] md:w-[150px] lg:w-[170px]" />
 
-      <div className="hidden lg:flex lg:w-1/2 items-center justify-center bg-gradient-to-b from-teal-200 to-teal-300">
-        <div className="text-center px-10">
-          <h1 className="text-5xl font-bold text-pink-500">
-            Taste It Café
-          </h1>
+            <div className="flex items-baseline justify-center gap-[0.08em] text-[clamp(2.7rem,3vw,4.5rem)] font-black leading-none tracking-[-0.08em]">
+              <span className="text-white">TASTE</span>
+              <span className="text-[#D17FB2]">IT</span>
+            </div>
 
-          <p className="mt-3 text-sm font-semibold tracking-[0.2em] text-white/90">
-            CAFÉ MANAGEMENT SYSTEM
-          </p>
-        </div>
+            <div className="mt-4 text-[0.7rem] font-bold uppercase tracking-[0.28em] text-white md:text-[0.78rem] lg:text-[0.9rem]">
+              CAFÉ MANAGEMENT SYSTEM
+            </div>
+
+            <div className="mt-auto flex w-full max-w-[480px] items-end justify-center pb-0 pt-6 md:pt-8 lg:pt-10">
+              <img
+                src={coffeeCup}
+                alt="Coffee cup"
+                className="mb-[-2px] w-[clamp(150px,20vw,240px)] max-w-full object-contain md:w-[clamp(170px,16vw,260px)] lg:w-[clamp(200px,14vw,290px)]"
+              />
+            </div>
+          </div>
+        </aside>
+
+        <section className="flex w-full items-center justify-center bg-white px-4 py-6 sm:px-6 md:w-1/2 md:px-8 lg:px-10 xl:px-12">
+          <div className="flex min-h-[640px] w-full max-w-[430px] flex-col justify-between">
+            <div className="pt-8 md:pt-12 lg:pt-16">
+              <h1 className="text-[2.2rem] font-semibold leading-none tracking-[-0.06em] text-[#171717] sm:text-[2.7rem] md:text-[3rem]">
+                Welcome <span className="text-[#d77db5]">Back!</span>
+              </h1>
+              <div className="mt-4 h-[4px] w-[180px] rounded-full bg-[#d77db5]" />
+              <p className="mt-5 text-base text-[#6b7280] md:text-lg">Sign in to your Taste It account</p>
+
+              <form className="mt-7 w-full" onSubmit={handleSubmit} noValidate>
+                {authError && <div className="mb-5"><Alert variant="danger" title="Unable to sign in">{authError}</Alert></div>}
+
+                <div className="space-y-5">
+                  <FormField label="Username / Email" required error={errors.email}>
+                    <div className="relative">
+                      <UserRound size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#9ecbcf]" aria-hidden="true" />
+                      <Input
+                        type="email"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        error={errors.email}
+                        placeholder="you@tasteit.com"
+                        autoComplete="email"
+                        disabled={isSubmitting}
+                        className="h-[52px] rounded-xl border-[#bfe4e5] bg-white pl-11 text-[15px] text-[#171717] shadow-none placeholder:text-[#9ca3af] focus:border-[#9dcfcd] focus:ring-4 focus:ring-[#a8d8d5]/25"
+                      />
+                    </div>
+                  </FormField>
+
+                  <FormField label="Password" required error={errors.password}>
+                    <div className="relative">
+                      <LockKeyhole size={18} className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#9ecbcf]" aria-hidden="true" />
+                      <Input
+                        type={passwordVisible ? "text" : "password"}
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        error={errors.password}
+                        autoComplete="current-password"
+                        disabled={isSubmitting}
+                        className="h-[52px] rounded-xl border-[#bfe4e5] bg-white pl-11 pr-12 text-[15px] text-[#171717] shadow-none placeholder:text-[#9ca3af] focus:border-[#9dcfcd] focus:ring-4 focus:ring-[#a8d8d5]/25"
+                      />
+                      <IconButton
+                        label={passwordVisible ? "Hide password" : "Show password"}
+                        size="sm"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 rounded-lg border border-transparent bg-transparent p-2 text-[#9ecbcf] hover:bg-[#eef9f8] hover:text-[#7bb8bd]"
+                        disabled={isSubmitting}
+                        onClick={() => setPasswordVisible((visible) => !visible)}
+                      >
+                        {passwordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </IconButton>
+                    </div>
+                  </FormField>
+                </div>
+
+                <div className="mt-6 flex items-center justify-between gap-3">
+                  <Checkbox label="Remember Me" className="text-sm text-[#374151]" disabled={isSubmitting} />
+                  <button type="button" className="text-sm font-medium text-[#d77db5] transition hover:text-[#c96ca7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d77db5]" aria-label="Forgot password">
+                    Forgot Password?
+                  </button>
+                </div>
+
+                <Button
+                  type="submit"
+                  loading={isSubmitting}
+                  size="lg"
+                  className="mt-7 h-[54px] w-full rounded-xl bg-[#a8d8d5] text-lg font-semibold text-white shadow-none hover:bg-[#9ccdc9] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#d77db5]"
+                >
+                  Sign In
+                </Button>
+              </form>
+            </div>
+
+            <footer className="pt-8 text-center text-xs text-[#7a7d82]">
+              © 2026 Taste It. All rights reserved.
+            </footer>
+          </div>
+        </section>
       </div>
-
-      {/* ==================================================
-          RIGHT PANEL - FORM
-      ================================================== */}
-
-      <div className="w-full lg:w-1/2 flex flex-col items-center justify-center px-6 py-12 relative">
-        <div className="w-full max-w-md">
-          {/* HEADER */}
-
-          <h2 className="text-4xl font-extrabold text-gray-900">
-            Welcome <span className="text-pink-500">Back!</span>
-          </h2>
-
-          <div className="mt-3 mb-3 h-1 w-16 rounded-full bg-pink-500" />
-
-          <p className="text-gray-500 mb-8">
-            Sign in to your Taste It account
-          </p>
-
-          {/* FORM */}
-
-          <form onSubmit={handleLogin}>
-            {/* EMAIL */}
-
-            <div className="mb-5 text-left">
-              <label className="block mb-2 text-sm font-semibold text-gray-800">
-                Username / Email <span className="text-pink-500">*</span>
-              </label>
-
-              <div className="relative">
-                {/* USER ICON */}
-
-                <svg
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="Enter your email"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-4 py-3.5 text-gray-800 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
-                  required
-                />
-              </div>
-            </div>
-
-            {/* PASSWORD */}
-
-            <div className="mb-4 text-left">
-              <label className="block mb-2 text-sm font-semibold text-gray-800">
-                Password <span className="text-pink-500">*</span>
-              </label>
-
-              <div className="relative">
-                {/* LOCK ICON */}
-
-                <svg
-                  className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                </svg>
-
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  className="w-full bg-gray-50 border border-gray-200 rounded-xl pl-11 pr-11 py-3.5 text-gray-800 outline-none transition focus:border-pink-400 focus:ring-2 focus:ring-pink-100"
-                  required
-                />
-
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-                  tabIndex={-1}
-                >
-                  {showPassword ? (
-                    // EYE-OFF ICON
-
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M9.88 9.88a3 3 0 1 0 4.24 4.24" />
-                      <path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68" />
-                      <path d="M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61" />
-                      <line x1="2" y1="2" x2="22" y2="22" />
-                    </svg>
-                  ) : (
-                    // EYE ICON
-
-                    <svg
-                      width="18"
-                      height="18"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* REMEMBER ME / FORGOT PASSWORD */}
-
-            <div className="flex items-center justify-between mb-6">
-              <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={rememberMe}
-                  onChange={(e) => setRememberMe(e.target.checked)}
-                  className="w-4 h-4 rounded border-gray-300 text-pink-500 focus:ring-pink-400"
-                />
-                Remember Me
-              </label>
-
-              <Link
-                to="/forgot-password"
-                className="text-sm font-medium text-pink-500 hover:text-pink-600"
-              >
-                Forgot Password?
-              </Link>
-            </div>
-
-            {/* SIGN IN */}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-pink-400 hover:bg-pink-500 text-white font-semibold py-3.5 rounded-xl transition disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-            >
-              {loading ? "Signing In..." : "Sign In"}
-            </button>
-
-            {/* MESSAGE */}
-
-            {message && (
-              <p className="mt-4 text-red-600 text-sm text-center">
-                {message}
-              </p>
-            )}
-          </form>
-        </div>
-
-        {/* FOOTER */}
-
-        <p className="absolute bottom-6 text-xs text-gray-400">
-          © {new Date().getFullYear()} Taste It. All rights reserved.
-        </p>
-      </div>
-    </div>
+    </main>
   );
 }
 
