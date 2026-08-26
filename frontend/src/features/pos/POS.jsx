@@ -45,7 +45,6 @@ export default function POS() {
   const [sale, setSale] = useState(null);
   const [saleCustomisations, setSaleCustomisations] = useState({});
   const [toast, setToast] = useState({ open: false, message: "", variant: "success" });
-  const branchId = currentBranch?.id;
 
   const notify = (message, variant = "success") => setToast({ open: true, message, variant });
 
@@ -69,7 +68,7 @@ export default function POS() {
     } finally {
       setIsLoading(false);
     }
-  }, [branchId]);
+  };
 
   useEffect(() => { void refreshCatalog(); }, [currentBranch?.id]);
 
