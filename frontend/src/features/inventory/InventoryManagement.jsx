@@ -1,114 +1,409 @@
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Boxes, PackagePlus, TriangleAlert, PackageX, CheckCircle2, MoreHorizontal, ChevronDown, Check } from "lucide-react";
+import { Plus, Boxes, TriangleAlert, PackageX, CheckCircle2 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useBranch } from "../../context/BranchContext";
-import { Button, Card, ConfirmDialog, Drawer, Dropdown, EmptyState, ErrorState, FormField, Input, LoadingState, Modal, SearchInput, Select, StatCard, StatusBadge, Table, TableBody, TableCell, TableHeader, TableRow, Toast } from "../../components/ui";
-import { ContentSection, FilterBar, ResponsiveGrid } from "../../components/layout/PageHeader";
+import { Button, ConfirmDialog, EmptyState, ErrorState, LoadingState, SearchInput, Toast, FilterMenu } from "../../components/ui";
 import PageContainer from "../../components/layout/PageContainer";
-import { adjustStock, createInventoryItem, deleteInventoryItem, getInventory, getInventoryCategories, updateInventoryItem, updateStockThresholds, getInventoryHistory } from "../../services/mock/mockInventoryService";
+import { adjustStock, createInventoryItem, deleteInventoryItem, getInventory, getInventoryCategories, updateInventoryItem, updateStockThresholds } from "../../services/mock/mockInventoryService";
 import { getMockMenuData } from "../../services/mock/mockMenuService";
-import { cn } from "../../utils/cn";
 
-const units = ["pc", "g", "kg", "ml", "L", "packs", "bottles", "boxes"];
-const statusOptions = [{ value: "ALL", label: "All statuses" }, { value: "normal", label: "Normal" }, { value: "low-stock", label: "Low Stock" }, { value: "out-of-stock", label: "Out of Stock" }];
-const dateFormat = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });
-const formatNumber = (value) => new Intl.NumberFormat("en-PH", { maximumFractionDigits: 2 }).format(value);
+import { InventoryItemModal } from "./components/InventoryItemModal";
+import { AdjustmentModal } from "./components/AdjustmentModal";
+import { ThresholdModal } from "./components/ThresholdModal";
+import { ItemHistoryModal } from "./components/ItemHistoryModal";
+import { InventoryList } from "./components/InventoryList";
+import { InventoryDetailsDrawer } from "./components/InventoryDetailsDrawer";
 
-function itemForm(item) { return { name: item?.name ?? "", category: item?.category ?? "", unit: item?.unit ?? "", imageUrl: item?.imageUrl ?? "", currentQuantity: item?.currentQuantity?.toString() ?? "0", lowStockThreshold: item?.lowStockThreshold?.toString() ?? "", targetStockLevel: item?.targetStockLevel?.toString() ?? "", costPerUnit: item?.costPerUnit?.toString() ?? "", supplier: item?.supplier ?? "", active: item?.active ?? true }; }
+const statusOptions = [
+  { value: "ALL", label: "All statuses" },
+  { value: "normal", label: "Normal" },
+  { value: "low-stock", label: "Low Stock" },
+  { value: "out-of-stock", label: "Out of Stock" }
+];
 
-function InventoryItemModal({ item, categories, onClose, onSave }) {
-  const [form, setForm] = useState(() => itemForm(item));
-  const [error, setError] = useState("");
-  const update = (field, value) => setForm((current) => ({ ...current, [field]: value }));
-  const submit = (event) => { event.preventDefault(); const quantity = Number(form.currentQuantity); const low = Number(form.lowStockThreshold); const target = Number(form.targetStockLevel); const cost = form.costPerUnit === "" ? undefined : Number(form.costPerUnit); if (!form.name.trim() || !form.category || !form.unit) return setError("Name, category, and unit are required."); if (![quantity, low, target].every(Number.isFinite) || quantity < 0 || low < 0 || target < 0) return setError("Quantity and thresholds must be zero or greater."); if (cost !== undefined && (!Number.isFinite(cost) || cost < 0)) return setError("Cost per unit must be zero or greater."); if (target < low) return setError("Target stock level must be at least the low-stock threshold."); onSave({ ...form, name: form.name.trim(), supplier: form.supplier.trim(), currentQuantity: quantity, lowStockThreshold: low, targetStockLevel: target, costPerUnit: cost }); };
-  return <Modal open onClose={onClose} title={item ? "Edit inventory item" : "Add inventory item"} className="max-h-[calc(100vh-2rem)] overflow-y-auto" footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" form="inventory-item-form">{item ? "Save changes" : "Add item"}</Button></>}><form id="inventory-item-form" className="space-y-4" noValidate onSubmit={submit}>{error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}<FormField label="Name" required><Input autoFocus value={form.name} onChange={(event) => update("name", event.target.value)} /></FormField><div className="grid gap-4 sm:grid-cols-2"><FormField label="Category" required><Select value={form.category} onChange={(event) => update("category", event.target.value)}><option value="">Select category</option>{categories.map((category) => <option key={category}>{category}</option>)}</Select></FormField><FormField label="Unit" required><Select value={form.unit} onChange={(event) => update("unit", event.target.value)}><option value="">Select unit</option>{units.map((unit) => <option key={unit}>{unit}</option>)}</Select></FormField></div><div className="grid gap-4 sm:grid-cols-2"><FormField label={item ? "Current quantity" : "Initial quantity"} required><Input type="number" min="0" step="0.01" value={form.currentQuantity} onChange={(event) => update("currentQuantity", event.target.value)} /></FormField><FormField label="Cost per unit"><Input type="number" min="0" step="0.01" value={form.costPerUnit} onChange={(event) => update("costPerUnit", event.target.value)} /></FormField></div><div className="grid gap-4 sm:grid-cols-2"><FormField label="Low-stock threshold" required><Input type="number" min="0" step="0.01" value={form.lowStockThreshold} onChange={(event) => update("lowStockThreshold", event.target.value)} /></FormField><FormField label="Target stock level" required><Input type="number" min="0" step="0.01" value={form.targetStockLevel} onChange={(event) => update("targetStockLevel", event.target.value)} /></FormField></div><FormField label="Supplier"><Input value={form.supplier} onChange={(event) => update("supplier", event.target.value)} /></FormField></form></Modal>;
-}
+const sortOptions = [
+  { value: "name-asc", label: "Name (A-Z)" },
+  { value: "name-desc", label: "Name (Z-A)" },
+  { value: "stock-asc", label: "Stock (Low to High)" },
+  { value: "stock-desc", label: "Stock (High to Low)" },
+  { value: "updated-desc", label: "Recently Updated" }
+];
 
-function AdjustmentModal({ item, onClose, onSave }) {
-  const [type, setType] = useState("ADD"); const [amount, setAmount] = useState(""); const [reason, setReason] = useState("New delivery"); const [error, setError] = useState("");
-  const submit = (event) => { event.preventDefault(); const quantity = Number(amount); if (!Number.isFinite(quantity) || quantity < 0) return setError("Enter a quantity of zero or greater."); if (type === "REMOVE" && quantity > item.currentQuantity) return setError("You cannot remove more stock than is currently available."); if (!reason.trim()) return setError("Enter an adjustment reason."); onSave({ type, amount: quantity, reason: reason.trim() }); };
-  return <Modal open onClose={onClose} title={`Adjust ${item.name}`} footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" form="stock-adjustment-form">Update stock</Button></>}><form id="stock-adjustment-form" className="space-y-4" noValidate onSubmit={submit}>{error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}<p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Current stock: <strong className="text-slate-900">{formatNumber(item.currentQuantity)} {item.unit}</strong></p><FormField label="Adjustment type"><Select value={type} onChange={(event) => setType(event.target.value)}><option value="ADD">Add stock</option><option value="REMOVE">Remove stock</option><option value="SET">Set quantity</option></Select></FormField><FormField label="Quantity" required><Input type="number" min="0" step="0.01" value={amount} onChange={(event) => setAmount(event.target.value)} /></FormField><FormField label="Reason" required><Select value={reason} onChange={(event) => setReason(event.target.value)}><option>New delivery</option><option>Damaged</option><option>Spoiled</option><option>Manual correction</option><option>Other</option></Select></FormField></form></Modal>;
-}
+function SummaryCard({ label, value, status }) {
+  const isDanger = status === "danger";
+  const isWarning = status === "warning";
+  const isSuccess = status === "success";
 
-function ThresholdModal({ item, onClose, onSave }) {
-  const [low, setLow] = useState(item.lowStockThreshold.toString()); const [target, setTarget] = useState(item.targetStockLevel.toString()); const [error, setError] = useState("");
-  const submit = (event) => { event.preventDefault(); const lowValue = Number(low); const targetValue = Number(target); if (![lowValue, targetValue].every(Number.isFinite) || lowValue < 0 || targetValue < lowValue) return setError("Target stock level must be at least the non-negative low-stock threshold."); onSave({ lowStockThreshold: lowValue, targetStockLevel: targetValue }); };
-  return <Modal open onClose={onClose} title={`Configure thresholds: ${item.name}`} footer={<><Button variant="outline" onClick={onClose}>Cancel</Button><Button type="submit" form="threshold-form">Save thresholds</Button></>}><form id="threshold-form" className="space-y-4" noValidate onSubmit={submit}>{error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}<p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">Current stock: <strong className="text-slate-900">{formatNumber(item.currentQuantity)} {item.unit}</strong></p><FormField label="Low-stock threshold"><Input type="number" min="0" step="0.01" value={low} onChange={(event) => setLow(event.target.value)} /></FormField><FormField label="Target stock level"><Input type="number" min="0" step="0.01" value={target} onChange={(event) => setTarget(event.target.value)} /></FormField><p className="text-xs leading-5 text-slate-500">0 is Out of Stock. From above 0 through {formatNumber(Number(low) || 0)} {item.unit} is Low Stock; quantities above that are Normal.</p></form></Modal>;
-}
+  let bgClass = "bg-white border-slate-200";
+  let textClass = "text-slate-900";
+  let iconClass = "text-slate-400";
+  let Icon = Boxes;
 
-function HistoryModal({ item, onClose }) {
-  const { currentBranch } = useBranch();
-  const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
-  useEffect(() => {
-    let active = true;
-    getInventoryHistory(currentBranch.id, item.id).then(data => {
-      if (active) { setHistory(data); setLoading(false); }
-    });
-    return () => { active = false; };
-  }, [currentBranch.id, item.id]);
+  if (isDanger) {
+    bgClass = "bg-rose-50 border-rose-200";
+    textClass = "text-rose-900";
+    iconClass = "text-rose-500";
+    Icon = PackageX;
+  } else if (isWarning) {
+    bgClass = "bg-amber-50 border-amber-200";
+    textClass = "text-amber-900";
+    iconClass = "text-amber-500";
+    Icon = TriangleAlert;
+  } else if (isSuccess) {
+    bgClass = "bg-emerald-50 border-emerald-200";
+    textClass = "text-emerald-900";
+    iconClass = "text-emerald-500";
+    Icon = CheckCircle2;
+  }
 
   return (
-    <Modal open onClose={onClose} title={`Inventory History: ${item.name}`} footer={<Button className="w-full sm:w-auto" onClick={onClose}>Close</Button>}>
-      {loading ? (
-        <div className="flex h-32 items-center justify-center"><LoadingState /></div>
-      ) : history.length === 0 ? (
-        <EmptyState title="No history found" description="There are no recorded changes for this item." />
-      ) : (
-        <div className="space-y-4">
-          {history.map(entry => (
-            <div key={entry.id} className="flex gap-4 rounded-xl border border-taste-border bg-slate-50 p-4">
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <span className={`font-bold ${entry.change.startsWith("+") ? "text-emerald-600" : entry.change.startsWith("-") ? "text-rose-600" : "text-slate-900"}`}>{entry.change}</span>
-                  <span className="text-sm font-medium text-slate-500">• {entry.type}</span>
-                </div>
-                <div className="mt-1 text-sm text-slate-500">
-                  {entry.user} • {dateFormat.format(new Date(entry.timestamp))}
-                </div>
-              </div>
-            </div>
-          ))}
+    <div className={`rounded-2xl border p-4 shadow-sm ${bgClass}`}>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{label}</p>
+          <p className={`mt-1 text-3xl font-bold ${textClass}`}>{value}</p>
         </div>
-      )}
-    </Modal>
+        <div className={`rounded-xl p-2.5 bg-white/60 ${iconClass}`}>
+          <Icon size={24} />
+        </div>
+      </div>
+    </div>
   );
 }
 
 function InventoryManagement() {
-  const { currentUser } = useAuth(); const { currentBranch } = useBranch(); const isOwner = currentUser?.role === "OWNER";
-  const [searchParams] = useSearchParams(); const stockView = searchParams.get("status");
-  const [items, setItems] = useState([]); const [categories, setCategories] = useState([]); const [menuItems, setMenuItems] = useState([]); const [loading, setLoading] = useState(true); const [loadedBranchId, setLoadedBranchId] = useState(null); const [error, setError] = useState(""); const [search, setSearch] = useState(""); const [category, setCategory] = useState("ALL"); const [status, setStatus] = useState(stockView || "ALL"); const [activeMenu, setActiveMenu] = useState(null); const [activeDropdown, setActiveDropdown] = useState(null); const [selected, setSelected] = useState(null); const [editItem, setEditItem] = useState(null); const [adjustItem, setAdjustItem] = useState(null); const [thresholdItem, setThresholdItem] = useState(null); const [deactivateItem, setDeactivateItem] = useState(null); const [historyItem, setHistoryItem] = useState(null); const [toast, setToast] = useState({ open: false, message: "", variant: "success" });
+  const { currentUser } = useAuth();
+  const { currentBranch } = useBranch();
+  const isOwner = currentUser?.role === "OWNER";
+  const [searchParams] = useSearchParams();
+  const stockView = searchParams.get("status");
+
+  const [items, setItems] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [menuItems, setMenuItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadedBranchId, setLoadedBranchId] = useState(null);
+  const [error, setError] = useState("");
+
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState("ALL");
+  const [status, setStatus] = useState(stockView || "ALL");
+  const [sort, setSort] = useState("name-asc");
+
+  const [selected, setSelected] = useState(null);
+
+  const [editItem, setEditItem] = useState(null);
+  const [adjustItem, setAdjustItem] = useState(null);
+  const [thresholdItem, setThresholdItem] = useState(null);
+  const [deactivateItem, setDeactivateItem] = useState(null);
+  const [historyItem, setHistoryItem] = useState(null);
+
+  const [toast, setToast] = useState({ open: false, message: "", variant: "success" });
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
-  useEffect(() => { const handleClickOutside = () => { setActiveDropdown(null); setActiveMenu(null); }; document.addEventListener("click", handleClickOutside); return () => document.removeEventListener("click", handleClickOutside); }, []);
-  useEffect(() => { let active = true; const branchId = currentBranch?.id; Promise.all([getInventory(branchId), getInventoryCategories(branchId), getMockMenuData(branchId)]).then(([inventory, inventoryCategories, menu]) => { if (!active) return; setItems(inventory); setCategories(inventoryCategories); setMenuItems(menu.items); setError(""); setLoadedBranchId(branchId); }).catch((loadError) => { if (active) { setError(loadError.message); setLoadedBranchId(branchId); } }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [currentBranch?.id]);
+  useEffect(() => {
+    let active = true;
+    const branchId = currentBranch?.id;
+    if (!branchId) return;
+
+    Promise.all([
+      getInventory(branchId),
+      getInventoryCategories(branchId),
+      getMockMenuData(branchId)
+    ])
+      .then(([inventory, inventoryCategories, menu]) => {
+        if (!active) return;
+        setItems(inventory);
+        setCategories(inventoryCategories);
+        setMenuItems(menu.items);
+        setError("");
+        setLoadedBranchId(branchId);
+      })
+      .catch((loadError) => {
+        if (active) {
+          setError(loadError.message);
+          setLoadedBranchId(branchId);
+        }
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [currentBranch?.id]);
+
   const notify = (message, variant = "success") => setToast({ open: true, message, variant });
-  const filtered = useMemo(() => items.filter((item) => { const term = search.trim().toLowerCase(); const isAlert = item.status === "low-stock" || item.status === "out-of-stock"; return item.active && (!term || `${item.name} ${item.category} ${item.supplier ?? ""}`.toLowerCase().includes(term)) && (category === "ALL" || item.category === category) && (status === "ALL" || (status === "alerts" ? isAlert : item.status === status)); }), [items, search, category, status]);
+
+  const filteredItems = useMemo(() => {
+    let result = items.filter((item) => {
+      const term = search.trim().toLowerCase();
+      const isAlert = item.status === "low-stock" || item.status === "out-of-stock";
+      const matchSearch = !term || `${item.name} ${item.category} ${item.supplier ?? ""}`.toLowerCase().includes(term);
+      const matchCategory = category === "ALL" || item.category === category;
+      const matchStatus = status === "ALL" || (status === "alerts" ? isAlert : item.status === status);
+      return item.active && matchSearch && matchCategory && matchStatus;
+    });
+
+    result.sort((a, b) => {
+      switch (sort) {
+        case "name-asc": return a.name.localeCompare(b.name);
+        case "name-desc": return b.name.localeCompare(a.name);
+        case "stock-asc": return a.currentQuantity - b.currentQuantity;
+        case "stock-desc": return b.currentQuantity - a.currentQuantity;
+        case "updated-desc": return new Date(b.lastUpdated).getTime() - new Date(a.lastUpdated).getTime();
+        default: return 0;
+      }
+    });
+
+    return result;
+  }, [items, search, category, status, sort]);
 
   const paginatedItems = useMemo(() => {
     const start = (currentPage - 1) * itemsPerPage;
-    return filtered.slice(start, start + itemsPerPage);
-  }, [filtered, currentPage]);
-  const totalPages = Math.ceil(filtered.length / itemsPerPage);
+    return filteredItems.slice(start, start + itemsPerPage);
+  }, [filteredItems, currentPage]);
 
-  const summaries = useMemo(() => ({ total: items.filter((item) => item.active).length, normal: items.filter((item) => item.active && item.status === "normal").length, low: items.filter((item) => item.active && item.status === "low-stock").length, out: items.filter((item) => item.active && item.status === "out-of-stock").length }), [items]);
-  const usage = (item) => menuItems.flatMap((menuItem) => (menuItem.recipe ?? []).filter((entry) => entry.ingredientId === item.id).map((entry) => ({ name: menuItem.name, quantity: entry.quantity, unit: entry.unit })));
-  const mutate = async (action, success) => { try { await action(); setItems(await getInventory(currentBranch.id)); notify(success); } catch (mutationError) { notify(mutationError.message, "danger"); } };
+  const totalPages = Math.ceil(filteredItems.length / itemsPerPage);
+
+  const summaries = useMemo(() => ({
+    total: items.filter((item) => item.active).length,
+    normal: items.filter((item) => item.active && item.status === "normal").length,
+    low: items.filter((item) => item.active && item.status === "low-stock").length,
+    out: items.filter((item) => item.active && item.status === "out-of-stock").length
+  }), [items]);
+
+  const usage = (item) => {
+    return menuItems.flatMap((menuItem) =>
+      (menuItem.recipe ?? [])
+        .filter((entry) => entry.ingredientId === item.id)
+        .map((entry) => ({ name: menuItem.name, quantity: entry.quantity, unit: entry.unit }))
+    );
+  };
+
+  const mutate = async (action, successMsg) => {
+    try {
+      await action();
+      const newItems = await getInventory(currentBranch.id);
+      setItems(newItems);
+      if (selected) {
+        const updatedSelected = newItems.find(i => i.id === selected.id);
+        if (updatedSelected) setSelected(updatedSelected);
+      }
+      notify(successMsg);
+    } catch (mutationError) {
+      notify(mutationError.message, "danger");
+    }
+  };
+
   const hasFilters = Boolean(search || category !== "ALL" || status !== "ALL");
-  if (loading || loadedBranchId !== currentBranch?.id) return <PageContainer><LoadingState label="Loading inventory" /></PageContainer>;
-  if (error || !currentBranch) return <PageContainer><ErrorState title="Inventory unavailable" description={error || "Select a branch to view inventory."} /></PageContainer>;
-  const actionButtons = (item) => <div className="relative"><Button variant="ghost" size="sm" aria-label={`Actions for ${item.name}`} onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === item.id ? null : item.id); }}><MoreHorizontal size={18} /></Button><Dropdown open={activeMenu === item.id} className="right-0 top-full mt-2 w-48"><button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={(e) => { e.stopPropagation(); setSelected(item); setActiveMenu(null); }}>View details</button><button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={(e) => { e.stopPropagation(); setAdjustItem(item); setActiveMenu(null); }}>Adjust stock</button>{isOwner && <><button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={(e) => { e.stopPropagation(); setEditItem(item); setActiveMenu(null); }}>Edit item</button><button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50" onClick={(e) => { e.stopPropagation(); setHistoryItem(item); setActiveMenu(null); }}>View history</button><button type="button" className="block w-full rounded-lg px-3 py-2 text-left text-sm text-rose-700 hover:bg-rose-50" onClick={(e) => { e.stopPropagation(); setDeactivateItem(item); setActiveMenu(null); }}>Deactivate</button></>}</Dropdown></div>;
-  return <PageContainer><ResponsiveGrid className="mt-7" columns="four"><button onClick={() => { setStatus("ALL"); setCurrentPage(1); }} className={cn("text-left transition-all rounded-2xl", status === "ALL" ? "ring-2 ring-taste-purple ring-offset-2" : "hover:scale-[1.02]")}><StatCard label="Total Items" value={summaries.total} trend="All inventory items" icon={Boxes} className="h-full" /></button><button onClick={() => { setStatus("normal"); setCurrentPage(1); }} className={cn("text-left transition-all rounded-2xl", status === "normal" ? "ring-2 ring-emerald-500 ring-offset-2" : "hover:scale-[1.02]")}><StatCard label="Normal Stock" value={summaries.normal} trend="Items well stocked" icon={CheckCircle2} className="h-full border-emerald-200" /></button><button onClick={() => { setStatus("low-stock"); setCurrentPage(1); }} className={cn("text-left transition-all rounded-2xl", status === "low-stock" ? "ring-2 ring-amber-500 ring-offset-2" : "hover:scale-[1.02]")}><StatCard label="Low Stock" value={summaries.low} trend="Needs restock soon" icon={TriangleAlert} className="h-full border-amber-200" /></button><button onClick={() => { setStatus("out-of-stock"); setCurrentPage(1); }} className={cn("text-left transition-all rounded-2xl", status === "out-of-stock" ? "ring-2 ring-rose-500 ring-offset-2" : "hover:scale-[1.02]")}><StatCard label="Out of Stock" value={summaries.out} trend="Urgent restock needed" icon={PackageX} className="h-full border-rose-200" /></button></ResponsiveGrid><FilterBar className="mt-7 flex-wrap items-center justify-between gap-4"><div className="flex flex-wrap items-center gap-3 flex-1 w-full xl:w-auto"><SearchInput value={search} onChange={(event) => { setSearch(event.target.value); setCurrentPage(1); }} placeholder="Search ingredient, category, or supplier" aria-label="Search inventory" className="w-full sm:w-auto flex-1 min-w-[200px] max-w-[320px]" /><div className="relative w-full sm:w-auto flex-1 min-w-[160px] max-w-[240px]"><Button variant="outline" className="w-full justify-between bg-white text-slate-700" onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown === "category" ? null : "category"); setActiveMenu(null); }}><span className="truncate">{category === "ALL" ? "All categories" : category}</span><ChevronDown size={16} className="text-slate-400 shrink-0 ml-2" /></Button><Dropdown open={activeDropdown === "category"} className="left-0 w-full min-w-48 p-2 max-h-80 overflow-y-auto"><button type="button" className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50" onClick={() => { setCategory("ALL"); setCurrentPage(1); setActiveDropdown(null); }}><span className={cn(category === "ALL" ? "font-semibold text-taste-purple" : "text-slate-700")}>All categories</span>{category === "ALL" && <Check size={16} className="text-taste-purple" />}</button><div className="my-1 h-px bg-slate-100" />{categories.map((entry) => <button key={entry} type="button" className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50" onClick={() => { setCategory(entry); setCurrentPage(1); setActiveDropdown(null); }}><span className={cn(category === entry ? "font-semibold text-taste-purple" : "text-slate-700")}>{entry}</span>{category === entry && <Check size={16} className="text-taste-purple" />}</button>)}</Dropdown></div><div className="relative w-full sm:w-auto flex-1 min-w-[140px] max-w-[220px]"><Button variant="outline" className="w-full justify-between bg-white text-slate-700" onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown === "status" ? null : "status"); setActiveMenu(null); }}><span className="truncate">{statusOptions.find(opt => opt.value === status)?.label || "All statuses"}</span><ChevronDown size={16} className="text-slate-400 shrink-0 ml-2" /></Button><Dropdown open={activeDropdown === "status"} className="left-0 w-full min-w-48 p-2"><button type="button" className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50" onClick={() => { setStatus("ALL"); setCurrentPage(1); setActiveDropdown(null); }}><span className={cn(status === "ALL" ? "font-semibold text-taste-purple" : "text-slate-700")}>All statuses</span>{status === "ALL" && <Check size={16} className="text-taste-purple" />}</button><div className="my-1 h-px bg-slate-100" />{statusOptions.filter(o => o.value !== "ALL").map((option) => <button key={option.value} type="button" className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50" onClick={() => { setStatus(option.value); setCurrentPage(1); setActiveDropdown(null); }}><span className={cn(status === option.value ? "font-semibold text-taste-purple" : "text-slate-700")}>{option.label}</span>{status === option.value && <Check size={16} className="text-taste-purple" />}</button>)}</Dropdown></div></div>{isOwner && <Button onClick={() => setEditItem({})} className="bg-taste-purple hover:bg-taste-purple-strong text-white w-full lg:w-auto shrink-0"><PackagePlus size={16} />Add inventory item</Button>}</FilterBar><ContentSection className="mt-7">{filtered.length ? <><div className="hidden lg:block"><Table><TableHeader><TableRow><TableCell as="th">Ingredient</TableCell><TableCell as="th">Category</TableCell><TableCell as="th">Current stock</TableCell><TableCell as="th">Status</TableCell><TableCell as="th">Low threshold</TableCell><TableCell as="th">Target level</TableCell><TableCell as="th">Last updated</TableCell><TableCell as="th"><span className="sr-only">Actions</span></TableCell></TableRow></TableHeader><TableBody>{paginatedItems.map((item) => <TableRow key={item.id} className={cn("cursor-pointer transition-colors hover:bg-slate-50", selected?.id === item.id ? "bg-slate-50" : "")} onClick={() => setSelected(item)}><TableCell><p className="font-semibold text-slate-900">{item.name}</p><p className="mt-1 text-xs text-slate-500">{item.supplier || "No supplier"}</p></TableCell><TableCell>{item.category}</TableCell><TableCell className="font-medium text-slate-900">{formatNumber(item.currentQuantity)} {item.unit}</TableCell><TableCell><StatusBadge status={item.status} /></TableCell><TableCell>{formatNumber(item.lowStockThreshold)} {item.unit}</TableCell><TableCell>{formatNumber(item.targetStockLevel)} {item.unit}</TableCell><TableCell className="whitespace-nowrap text-slate-500">{dateFormat.format(new Date(item.lastUpdated))}</TableCell><TableCell>{actionButtons(item)}</TableCell></TableRow>)}</TableBody></Table></div><div className="grid gap-3 lg:hidden">{paginatedItems.map((item) => <Card key={item.id} className={cn("cursor-pointer p-4 transition-colors hover:bg-slate-50", selected?.id === item.id ? "bg-slate-50 border-taste-purple/30" : "")} onClick={() => setSelected(item)}><div className="flex items-start justify-between gap-3"><div><h3 className="font-semibold text-slate-900">{item.name}</h3><p className="mt-1 text-sm text-slate-500">{item.category} · {item.supplier || "No supplier"}</p></div>{actionButtons(item)}</div><div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className="text-lg font-bold text-slate-900">{formatNumber(item.currentQuantity)} {item.unit}</p><StatusBadge status={item.status} /></div><div className="mt-4 grid grid-cols-2 gap-3 border-t border-taste-border pt-3 text-xs text-slate-500"><p>Low: <span className="font-semibold text-slate-700">{formatNumber(item.lowStockThreshold)} {item.unit}</span></p><p>Target: <span className="font-semibold text-slate-700">{formatNumber(item.targetStockLevel)} {item.unit}</span></p><p className="col-span-2">Updated: {dateFormat.format(new Date(item.lastUpdated))}</p></div></Card>)}</div><div className="mt-4 flex items-center justify-between border-t border-taste-border pt-4"><p className="text-sm text-slate-500">Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filtered.length)} of {filtered.length} items</p><div className="flex items-center gap-2"><Button variant="outline" size="sm" disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)}>Previous</Button><Button variant="outline" size="sm" disabled={currentPage === totalPages} onClick={() => setCurrentPage(p => p + 1)}>Next</Button></div></div></> : <EmptyState title={hasFilters ? "No matching inventory items" : "No inventory items"} description={hasFilters ? "Try changing or clearing your filters." : "Add the first ingredient to this branch inventory."} action={isOwner && !hasFilters ? <Button onClick={() => setEditItem({})}><PackagePlus size={16} />Add inventory item</Button> : null} />}</ContentSection>{selected && <Drawer open onClose={() => setSelected(null)} title="Item Details" footer={<><Button className="w-full bg-taste-purple hover:bg-taste-purple-strong text-white" onClick={() => setAdjustItem(selected)}>Adjust Stock</Button>{isOwner && <div className="mt-2 grid grid-cols-3 gap-2"><Button variant="outline" className="w-full" onClick={() => setEditItem(selected)}>Edit</Button><Button variant="outline" className="w-full" onClick={() => setThresholdItem(selected)}>Thresholds</Button><Button variant="outline" className="w-full" onClick={() => setHistoryItem(selected)}>History</Button></div>}</>}><div className="space-y-8"><div className="flex flex-col gap-2"><div className="flex items-start justify-between gap-4"><h3 className="text-xl font-bold text-slate-900">{selected.name}</h3><StatusBadge status={selected.status} /></div><p className="text-sm font-medium text-slate-500">{selected.category}</p></div><div className="grid grid-cols-3 gap-3"><div className="rounded-xl border border-taste-border bg-slate-50 p-4"><p className="text-xs font-medium text-slate-500">Current Stock</p><p className={`mt-1 text-lg font-bold ${selected.status === "out-of-stock" ? "text-rose-600" : selected.status === "low-stock" ? "text-amber-600" : "text-emerald-600"}`}>{formatNumber(selected.currentQuantity)} {selected.unit}</p></div><div className="rounded-xl border border-taste-border bg-slate-50 p-4"><p className="text-xs font-medium text-slate-500">Threshold</p><p className="mt-1 text-lg font-bold text-slate-900">{formatNumber(selected.lowStockThreshold)} {selected.unit}</p></div><div className="rounded-xl border border-taste-border bg-slate-50 p-4"><p className="text-xs font-medium text-slate-500">Target Level</p><p className="mt-1 text-lg font-bold text-slate-900">{formatNumber(selected.targetStockLevel)} {selected.unit}</p></div></div><div><h4 className="mb-3 text-sm font-semibold text-slate-900">Item Information</h4><div className="grid grid-cols-2 gap-y-3 rounded-xl border border-taste-border bg-slate-50 p-5 text-sm"><div className="text-slate-500">Unit</div><div className="text-right font-medium text-slate-900">{selected.unit}</div><div className="text-slate-500">Last Updated</div><div className="text-right font-medium text-slate-900">{dateFormat.format(new Date(selected.lastUpdated))}</div><div className="text-slate-500">Category</div><div className="text-right font-medium text-slate-900">{selected.category}</div><div className="text-slate-500">Supplier</div><div className="text-right font-medium text-slate-900">{selected.supplier || "Not specified"}</div>{selected.costPerUnit !== undefined && <><div className="text-slate-500">Cost per unit</div><div className="text-right font-medium text-slate-900">₱{formatNumber(selected.costPerUnit)}</div></>}</div></div><div><h4 className="mb-3 text-sm font-semibold text-slate-900">Used in menu items</h4>{usage(selected).length ? <ul className="divide-y divide-taste-border rounded-xl border border-taste-border overflow-hidden">{usage(selected).map((entry) => <li key={entry.name} className="flex justify-between gap-4 p-4 text-sm bg-slate-50"><span className="font-medium text-slate-900">{entry.name}</span><span className="text-slate-500">{entry.quantity} {entry.unit}</span></li>)}</ul> : <p className="text-sm text-slate-500">This ingredient is not currently used by a menu recipe.</p>}</div></div></Drawer>}{editItem && <InventoryItemModal item={editItem.id ? editItem : null} categories={categories} onClose={() => setEditItem(null)} onSave={(form) => { mutate(() => editItem.id ? updateInventoryItem(currentBranch.id, editItem.id, form, { actorRole: currentUser.role }) : createInventoryItem(currentBranch.id, form, { actorRole: currentUser.role }), editItem.id ? "Inventory item updated." : "Inventory item added."); setEditItem(null); }} />}
-{adjustItem && <AdjustmentModal item={adjustItem} onClose={() => setAdjustItem(null)} onSave={(adjustment) => { mutate(() => adjustStock(currentBranch.id, adjustItem.id, adjustment, { actorRole: currentUser.role }), "Stock updated."); setAdjustItem(null); if (selected && selected.id === adjustItem.id) { getInventory(currentBranch.id).then(inv => { const updatedItem = inv.find(i => i.id === adjustItem.id); if (updatedItem) setSelected(updatedItem); }); } }} />}
-{thresholdItem && <ThresholdModal item={thresholdItem} onClose={() => setThresholdItem(null)} onSave={(thresholds) => { mutate(() => updateStockThresholds(currentBranch.id, thresholdItem.id, thresholds, { actorRole: currentUser.role }), "Stock thresholds updated."); setThresholdItem(null); }} />}
-{historyItem && <HistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />}
-<ConfirmDialog open={Boolean(deactivateItem)} onClose={() => setDeactivateItem(null)} title="Deactivate inventory item?" description={`Deactivate ${deactivateItem?.name ?? "this item"}? It will no longer appear in this branch's active inventory.`} confirmLabel="Deactivate" danger onConfirm={() => { mutate(() => deleteInventoryItem(currentBranch.id, deactivateItem.id, { actorRole: currentUser.role }), "Inventory item deactivated."); setDeactivateItem(null); }} />
-<Toast open={toast.open} onClose={() => setToast((current) => ({ ...current, open: false }))} variant={toast.variant}>{toast.message}</Toast>
-</PageContainer>;
+  const categoryOptions = [
+    { value: "ALL", label: "All categories" },
+    ...categories.map(c => ({ value: c, label: c }))
+  ];
+
+  if (loading || loadedBranchId !== currentBranch?.id) {
+    return (
+      <PageContainer>
+        <LoadingState label="Loading inventory" />
+      </PageContainer>
+    );
+  }
+
+  if (error || !currentBranch) {
+    return (
+      <PageContainer>
+        <ErrorState title="Inventory unavailable" description={error || "Select a branch to view inventory."} />
+      </PageContainer>
+    );
+  }
+
+  return (
+    <PageContainer>
+      {/* PAGE HEADER */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-extrabold text-taste-heading">Inventory</h1>
+          <p className="mt-1 text-sm font-medium text-slate-500">Monitor and manage branch inventory and stock levels.</p>
+        </div>
+        {isOwner && (
+          <Button onClick={() => setEditItem({})} className="bg-taste-purple hover:bg-taste-purple-strong text-white whitespace-nowrap self-start sm:self-auto">
+            <Plus size={16} /> Add Item
+          </Button>
+        )}
+      </div>
+
+      {/* SUMMARY SECTION */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <SummaryCard label="Total Items" value={summaries.total} status="neutral" />
+        <SummaryCard label="Normal Stock" value={summaries.normal} status="success" />
+        <SummaryCard label="Low Stock" value={summaries.low} status="warning" />
+        <SummaryCard label="Out of Stock" value={summaries.out} status="danger" />
+      </div>
+
+      {/* SEARCH + FILTER TOOLBAR */}
+      <div className="flex flex-col md:flex-row gap-3 mb-4 rounded-2xl bg-white p-3 shadow-sm border border-slate-200">
+        <div className="flex-1 min-w-[240px]">
+          <SearchInput
+            value={search}
+            onChange={(event) => { setSearch(event.target.value); setCurrentPage(1); }}
+            placeholder="Search inventory..."
+            aria-label="Search inventory"
+            className="w-full border-none shadow-none bg-slate-50"
+          />
+        </div>
+        <div className="h-px w-full md:h-10 md:w-px bg-slate-100 hidden md:block"></div>
+        <div className="flex flex-wrap items-center gap-2">
+          <FilterMenu
+            label="Category"
+            value={category}
+            options={categoryOptions}
+            onChange={(val) => { setCategory(val); setCurrentPage(1); }}
+          />
+          <FilterMenu
+            label="Status"
+            value={status}
+            options={statusOptions}
+            onChange={(val) => { setStatus(val); setCurrentPage(1); }}
+          />
+          <FilterMenu
+            label="Sort"
+            value={sort}
+            options={sortOptions}
+            onChange={setSort}
+          />
+        </div>
+      </div>
+
+      {/* INVENTORY TABLE */}
+      {filteredItems.length ? (
+        <>
+          <InventoryList
+            items={paginatedItems}
+            selected={selected}
+            setSelected={setSelected}
+          />
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-between border-t border-slate-200 pt-4 gap-4">
+            <p className="text-sm font-medium text-slate-500">
+              Showing {(currentPage - 1) * itemsPerPage + 1} to{" "}
+              {Math.min(currentPage * itemsPerPage, filteredItems.length)} of {filteredItems.length} items
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-white border-slate-200 text-slate-700"
+                disabled={currentPage === 1}
+                onClick={() => setCurrentPage((p) => p - 1)}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="bg-white border-slate-200 text-slate-700"
+                disabled={currentPage === totalPages || totalPages === 0}
+                onClick={() => setCurrentPage((p) => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="mt-8">
+          <EmptyState
+            title={hasFilters ? "No matching inventory items" : "No inventory items"}
+            description={hasFilters ? "Try changing or clearing your filters." : "Add the first ingredient to this branch inventory."}
+            action={isOwner && !hasFilters ? (
+              <Button onClick={() => setEditItem({})} className="bg-taste-purple hover:bg-taste-purple-strong text-white">
+                <Plus size={16} /> Add Item
+              </Button>
+            ) : null}
+          />
+        </div>
+      )}
+
+      {/* ROW-BASED DETAILS DRAWER */}
+      <InventoryDetailsDrawer
+        selected={selected}
+        onClose={() => setSelected(null)}
+        isOwner={isOwner}
+        setAdjustItem={setAdjustItem}
+        setEditItem={setEditItem}
+        setThresholdItem={setThresholdItem}
+        setHistoryItem={setHistoryItem}
+        usage={usage}
+      />
+
+      {editItem && (
+        <InventoryItemModal
+          item={editItem.id ? editItem : null}
+          categories={categories}
+          onClose={() => setEditItem(null)}
+          onSave={(form) => {
+            mutate(
+              () => editItem.id
+                ? updateInventoryItem(currentBranch.id, editItem.id, form, { actorRole: currentUser.role })
+                : createInventoryItem(currentBranch.id, form, { actorRole: currentUser.role }),
+              editItem.id ? "Inventory item updated." : "Inventory item added."
+            );
+            setEditItem(null);
+          }}
+        />
+      )}
+      
+      {adjustItem && (
+        <AdjustmentModal
+          item={adjustItem}
+          onClose={() => setAdjustItem(null)}
+          onSave={(adjustment) => {
+            mutate(
+              () => adjustStock(currentBranch.id, adjustItem.id, adjustment, { actorRole: currentUser.role }),
+              "Stock updated."
+            );
+            setAdjustItem(null);
+          }}
+        />
+      )}
+      
+      {thresholdItem && (
+        <ThresholdModal
+          item={thresholdItem}
+          onClose={() => setThresholdItem(null)}
+          onSave={(thresholds) => {
+            mutate(
+              () => updateStockThresholds(currentBranch.id, thresholdItem.id, thresholds, { actorRole: currentUser.role }),
+              "Stock thresholds updated."
+            );
+            setThresholdItem(null);
+          }}
+        />
+      )}
+      
+      {historyItem && <ItemHistoryModal item={historyItem} onClose={() => setHistoryItem(null)} />}
+      
+      <ConfirmDialog
+        open={Boolean(deactivateItem)}
+        onClose={() => setDeactivateItem(null)}
+        title="Deactivate inventory item?"
+        description={`Deactivate ${deactivateItem?.name ?? "this item"}? It will no longer appear in this branch's active inventory.`}
+        confirmLabel="Deactivate"
+        danger
+        onConfirm={() => {
+          mutate(
+            () => deleteInventoryItem(currentBranch.id, deactivateItem.id, { actorRole: currentUser.role }),
+            "Inventory item deactivated."
+          );
+          setDeactivateItem(null);
+        }}
+      />
+      
+      <Toast open={toast.open} onClose={() => setToast((current) => ({ ...current, open: false }))} variant={toast.variant}>
+        {toast.message}
+      </Toast>
+    </PageContainer>
+  );
 }
 
 export default InventoryManagement;
