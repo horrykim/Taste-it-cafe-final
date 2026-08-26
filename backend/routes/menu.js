@@ -1,7 +1,5 @@
-
 const express = require("express");
 const router = express.Router();
-
 const pool = require("../config/database");
 
 // ======================================================
@@ -29,7 +27,6 @@ router.get("/", async (req, res) => {
       success: true,
       menuItems: result.rows,
     });
-
   } catch (error) {
     console.error("Get menu items error:", error);
 
@@ -78,13 +75,53 @@ router.get("/:id", async (req, res) => {
       success: true,
       menuItem: result.rows[0],
     });
-
   } catch (error) {
     console.error("Get menu item error:", error);
 
     res.status(500).json({
       success: false,
       message: "Failed to get menu item.",
+      error: error.message,
+    });
+  }
+});
+
+// ======================================================
+// GET RECIPE FOR MENU ITEM
+// ======================================================
+
+router.get("/:id/recipe", async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      `
+      SELECT
+        r.id,
+        r.menu_item_id,
+        r.ingredient_id,
+        r.quantity_required,
+        i.ingredient_name,
+        i.unit
+      FROM recipes r
+      LEFT JOIN ingredients i
+        ON i.id = r.ingredient_id
+      WHERE r.menu_item_id = $1
+      ORDER BY r.id ASC
+      `,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      recipeItems: result.rows,
+    });
+  } catch (error) {
+    console.error("Get recipe error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to get recipe.",
       error: error.message,
     });
   }
@@ -136,9 +173,19 @@ router.post("/", async (req, res) => {
       });
     }
 
+    const allowedStatuses = ["available", "unavailable"];
+
+    const cleanStatus = status || "available";
+
+    if (!allowedStatuses.includes(cleanStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid menu item status.",
+      });
+    }
+
     // --------------------------------------------------
     // IMAGE
-    // Empty image becomes NULL
     // --------------------------------------------------
 
     const cleanImageUrl =
@@ -165,12 +212,18 @@ router.post("/", async (req, res) => {
       `,
       [
         String(item_name).trim(),
-        description && String(description).trim()
+
+        description &&
+        String(description).trim()
           ? String(description).trim()
           : null,
+
         String(category).trim(),
+
         Number(price),
-        status || "available",
+
+        cleanStatus,
+
         cleanImageUrl,
       ]
     );
@@ -179,25 +232,15 @@ router.post("/", async (req, res) => {
       success: true,
       message: "Menu item added successfully.",
       menuItem: result.rows[0],
+      menuItemId: result.rows[0].id,
     });
-
   } catch (error) {
     console.error("Create menu item error:", error);
 
-    // Duplicate / database constraint
     if (error.code === "23505") {
       return res.status(409).json({
         success: false,
         message: "A menu item with this information already exists.",
-        error: error.detail,
-      });
-    }
-
-    // Foreign key error
-    if (error.code === "23503") {
-      return res.status(409).json({
-        success: false,
-        message: "Invalid related record.",
         error: error.detail,
       });
     }
@@ -284,16 +327,7 @@ router.put("/:id", async (req, res) => {
         : existingItem.status;
 
     // --------------------------------------------------
-    // IMAGE HANDLING
-    //
-    // If image_url is NOT included:
-    //     keep old image
-    //
-    // If image_url is empty:
-    //     set image to NULL
-    //
-    // If image_url has a value:
-    //     update image
+    // IMAGE
     // --------------------------------------------------
 
     let updatedImageUrl;
@@ -337,6 +371,18 @@ router.put("/:id", async (req, res) => {
       });
     }
 
+    const allowedStatuses = [
+      "available",
+      "unavailable",
+    ];
+
+    if (!allowedStatuses.includes(updatedStatus)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid menu item status.",
+      });
+    }
+
     // --------------------------------------------------
     // UPDATE
     // --------------------------------------------------
@@ -371,7 +417,6 @@ router.put("/:id", async (req, res) => {
       message: "Menu item updated successfully.",
       menuItem: result.rows[0],
     });
-
   } catch (error) {
     console.error("Update menu item error:", error);
 
@@ -379,14 +424,6 @@ router.put("/:id", async (req, res) => {
       return res.status(409).json({
         success: false,
         message: "A menu item with this information already exists.",
-        error: error.detail,
-      });
-    }
-
-    if (error.code === "23503") {
-      return res.status(409).json({
-        success: false,
-        message: "Invalid related record.",
         error: error.detail,
       });
     }
@@ -400,10 +437,177 @@ router.put("/:id", async (req, res) => {
 });
 
 // ======================================================
+// SAVE / REPLACE RECIPE
+// ======================================================
+
+router.put("/:id/recipe", async (req, res) => {
+  const client = await pool.connect();
+
+  try {
+    const { id } = req.params;
+    const { recipeItems } = req.body;
+
+    // --------------------------------------------------
+    // VALIDATE MENU ITEM
+    // --------------------------------------------------
+
+    const menuResult = await client.query(
+      `
+      SELECT id
+      FROM menu_items
+      WHERE id = $1
+      `,
+      [id]
+    );
+
+    if (menuResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "Menu item not found.",
+      });
+    }
+
+    // --------------------------------------------------
+    // VALIDATE RECIPE ARRAY
+    // --------------------------------------------------
+
+    if (!Array.isArray(recipeItems)) {
+      return res.status(400).json({
+        success: false,
+        message: "recipeItems must be an array.",
+      });
+    }
+
+    // --------------------------------------------------
+    // VALIDATE EACH INGREDIENT
+    // --------------------------------------------------
+
+    for (const recipe of recipeItems) {
+      const ingredientId = Number(recipe.ingredient_id);
+      const quantity = Number(recipe.quantity_required);
+
+      if (
+        !Number.isInteger(ingredientId) ||
+        ingredientId <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid ingredient ID.",
+        });
+      }
+
+      if (
+        !Number.isFinite(quantity) ||
+        quantity <= 0
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "Recipe quantity must be greater than 0.",
+        });
+      }
+
+      const ingredientResult = await client.query(
+        `
+        SELECT id
+        FROM ingredients
+        WHERE id = $1
+        `,
+        [ingredientId]
+      );
+
+      if (ingredientResult.rows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: `Ingredient ${ingredientId} does not exist.`,
+        });
+      }
+    }
+
+    // --------------------------------------------------
+    // TRANSACTION
+    // --------------------------------------------------
+
+    await client.query("BEGIN");
+
+    // Delete old recipe
+    await client.query(
+      `
+      DELETE FROM recipes
+      WHERE menu_item_id = $1
+      `,
+      [id]
+    );
+
+    // Insert new recipe
+    for (const recipe of recipeItems) {
+      await client.query(
+        `
+        INSERT INTO recipes (
+          menu_item_id,
+          ingredient_id,
+          quantity_required
+        )
+        VALUES ($1, $2, $3)
+        `,
+        [
+          Number(id),
+          Number(recipe.ingredient_id),
+          Number(recipe.quantity_required),
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+
+    // --------------------------------------------------
+    // RETURN SAVED RECIPE
+    // --------------------------------------------------
+
+    const savedRecipe = await pool.query(
+      `
+      SELECT
+        r.id,
+        r.menu_item_id,
+        r.ingredient_id,
+        r.quantity_required,
+        i.ingredient_name,
+        i.unit
+      FROM recipes r
+      LEFT JOIN ingredients i
+        ON i.id = r.ingredient_id
+      WHERE r.menu_item_id = $1
+      ORDER BY r.id ASC
+      `,
+      [id]
+    );
+
+    res.json({
+      success: true,
+      message: "Recipe saved successfully.",
+      recipeItems: savedRecipe.rows,
+    });
+  } catch (error) {
+    await client.query("ROLLBACK");
+
+    console.error("Save recipe error:", error);
+
+    res.status(500).json({
+      success: false,
+      message: "Failed to save recipe.",
+      error: error.message,
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// ======================================================
 // DELETE MENU ITEM
 // ======================================================
 
 router.delete("/:id", async (req, res) => {
+  const client = await pool.connect();
+
   try {
     const { id } = req.params;
 
@@ -411,7 +615,7 @@ router.delete("/:id", async (req, res) => {
     // CHECK ITEM
     // --------------------------------------------------
 
-    const existingResult = await pool.query(
+    const existingResult = await client.query(
       `
       SELECT *
       FROM menu_items
@@ -428,10 +632,22 @@ router.delete("/:id", async (req, res) => {
     }
 
     // --------------------------------------------------
-    // DELETE
+    // TRANSACTION
     // --------------------------------------------------
 
-    const result = await pool.query(
+    await client.query("BEGIN");
+
+    // Delete recipes first
+    await client.query(
+      `
+      DELETE FROM recipes
+      WHERE menu_item_id = $1
+      `,
+      [id]
+    );
+
+    // Delete menu item
+    const result = await client.query(
       `
       DELETE FROM menu_items
       WHERE id = $1
@@ -440,16 +656,18 @@ router.delete("/:id", async (req, res) => {
       [id]
     );
 
+    await client.query("COMMIT");
+
     res.json({
       success: true,
-      message: "Menu item deleted successfully.",
+      message: "Menu item and recipe deleted successfully.",
       deletedItem: result.rows[0],
     });
-
   } catch (error) {
+    await client.query("ROLLBACK");
+
     console.error("Delete menu item error:", error);
 
-    // Foreign key violation
     if (error.code === "23503") {
       return res.status(409).json({
         success: false,
@@ -464,8 +682,9 @@ router.delete("/:id", async (req, res) => {
       message: "Failed to delete menu item.",
       error: error.message,
     });
+  } finally {
+    client.release();
   }
 });
 
 module.exports = router;
-
