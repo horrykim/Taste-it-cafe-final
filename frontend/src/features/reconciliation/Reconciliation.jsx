@@ -1,64 +1,747 @@
 import { useEffect, useMemo, useState } from "react";
-import { ClipboardCheck, Eye, FilePenLine, Minus, Plus, TriangleAlert } from "lucide-react";
+import { Check, CheckCircle2, ChevronDown, ClipboardCheck, FilePenLine, TriangleAlert, Store, User, Calendar, ClipboardList, Clock, ArrowDown, ArrowUp, Circle, CircleCheck, CircleMinus, CirclePlus } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useBranch } from "../../context/BranchContext";
-import { Badge, Button, ConfirmDialog, ContentCard, EmptyState, ErrorState, Input, LoadingState, Modal, SearchInput, Select, StatCard, StatusBadge, Table, TableBody, TableCell, TableHeader, TableRow, Toast } from "../../components/ui";
-import { FilterBar, PageHeader, ResponsiveGrid, SectionHeader } from "../../components/layout/PageHeader";
+import { Button, ConfirmDialog, ContentCard, Drawer, Dropdown, EmptyState, ErrorState, Input, LoadingState, Modal, SearchInput, StatCard, StatusBadge, Table, TableBody, TableCell, TableHeader, TableRow, Toast } from "../../components/ui";
+import { FilterBar, ResponsiveGrid } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
-import { applyAdjustment, createReconciliation, getReconciliationDetails, getReconciliations, getReconciliationSummary, saveDraft, submitReconciliation } from "../../services/mock/mockReconciliationService";
+import { applyAdjustment, createReconciliation, getReconciliations, saveDraft, submitReconciliation } from "../../services/mock/mockReconciliationService";
+import { getInventory } from "../../services/mock/mockInventoryService";
+import { cn } from "../../utils/cn";
 
 const dateFormat = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });
 const numberFormat = new Intl.NumberFormat("en-PH", { maximumFractionDigits: 2 });
-const reasons = ["Damaged", "Expired/old stock", "Supplier return", "Miscount", "Other"];
 const formatQuantity = (quantity, unit) => `${numberFormat.format(quantity)} ${unit}`;
 const signed = (value, unit) => `${value > 0 ? "+" : ""}${numberFormat.format(value)} ${unit}`;
-const reconciliationStatus = (record) => record.status === "DRAFT" ? <StatusBadge status="pending" label="Draft" /> : <StatusBadge status="completed" label="Completed" />;
+
+function getItemStatus(item) {
+  if (item.reconciliationStatus === "DRAFT") return "pending";
+  if (item.physicalQuantity === null || item.physicalQuantity === undefined) return "pending";
+  if (item.variance === 0) return "matched";
+  return "discrepancy";
+}
+
+function ItemStatusBadge({ status }) {
+  if (status === "pending") return <StatusBadge status="pending" label="Pending" />;
+  if (status === "matched") return <StatusBadge status="completed" label="Matched" />;
+  if (status === "discrepancy") return <StatusBadge status="warning" label="Discrepancy" />;
+  return null;
+}
 
 function countStatus(item) {
-  if (item.physicalQuantity === null || item.physicalQuantity === "") return { label: "Uncounted", variant: "neutral" };
-  if (item.variance === 0) return { label: "Matched", variant: "success" };
-  return item.variance > 0 ? { label: "Excess", variant: "info" } : { label: "Shortage", variant: "warning" };
+  if (item.physicalQuantity === null || item.physicalQuantity === "") return { label: "Not counted", variant: "neutral", icon: Circle };
+  if (item.variance === 0) return { label: "Matched", variant: "success", icon: CircleCheck };
+  return item.variance > 0 ? { label: "Excess", variant: "info", icon: CirclePlus } : { label: "Shortage", variant: "warning", icon: CircleMinus };
 }
-function CountBadge({ item }) { const state = countStatus(item); return <Badge variant={state.variant}>{state.label}</Badge>; }
-function AdjustmentBadge({ status }) { const labels = { APPLIED: ["Applied", "success"], PENDING: ["Not adjusted", "warning"], NOT_REQUIRED: ["No adjustment needed", "neutral"], NOT_APPLICABLE: ["Draft", "neutral"] }; const [label, variant] = labels[status] ?? [status, "neutral"]; return <Badge variant={variant}>{label}</Badge>; }
+
+function CountBadge({ item }) { 
+  const state = countStatus(item);
+  const Icon = state.icon;
+  const colors = {
+    neutral: "text-slate-500",
+    success: "text-emerald-600",
+    warning: "text-rose-500",
+    info: "text-sky-600"
+  };
+  return (
+    <div className={`flex items-center gap-1.5 font-medium ${colors[state.variant]}`}>
+      <Icon size={14} className="stroke-2" />
+      <span>{state.label}</span>
+    </div>
+  );
+}
 
 function VarianceSummary({ items }) {
   const summary = useMemo(() => {
     const counted = items.filter((item) => item.physicalQuantity !== null && item.physicalQuantity !== "");
     return { total: items.length, counted: counted.length, matched: counted.filter((item) => item.variance === 0).length, shortages: counted.filter((item) => item.variance < 0).length, excesses: counted.filter((item) => item.variance > 0).length };
   }, [items]);
-  return <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-3"><p><span className="block text-xs text-slate-500">Total items</span><strong>{summary.total}</strong></p><p><span className="block text-xs text-slate-500">Counted</span><strong>{summary.counted}</strong></p><p><span className="block text-xs text-slate-500">Uncounted</span><strong>{summary.total - summary.counted}</strong></p><p><span className="block text-xs text-slate-500">Matched</span><strong>{summary.matched}</strong></p><p><span className="block text-xs text-slate-500">Shortages</span><strong>{summary.shortages}</strong></p><p><span className="block text-xs text-slate-500">Excesses</span><strong>{summary.excesses}</strong></p><p className="col-span-2 text-xs leading-5 text-slate-500 sm:col-span-3">Variance is shown per item and unit; it is not totaled across unlike units.</p></div>;
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-5">
+      <div className="rounded-xl border border-taste-border bg-white p-3 flex items-center justify-between shadow-sm">
+        <div><p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Total Items</p><p className="text-lg font-bold text-slate-900">{summary.total}</p></div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pink-50 text-taste-pink"><ClipboardList size={16} /></div>
+      </div>
+      <div className="rounded-xl border border-taste-border bg-white p-3 flex items-center justify-between shadow-sm">
+        <div><p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Counted</p><p className="text-lg font-bold text-slate-900">{summary.counted}</p></div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-500"><CheckCircle2 size={16} /></div>
+      </div>
+      <div className="rounded-xl border border-taste-border bg-white p-3 flex items-center justify-between shadow-sm">
+        <div><p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Uncounted</p><p className="text-lg font-bold text-slate-900">{summary.total - summary.counted}</p></div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-500"><Clock size={16} /></div>
+      </div>
+      <div className="rounded-xl border border-taste-border bg-white p-3 flex items-center justify-between shadow-sm">
+        <div><p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Matched</p><p className="text-lg font-bold text-slate-900">{summary.matched}</p></div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-500"><CheckCircle2 size={16} /></div>
+      </div>
+      <div className="rounded-xl border border-taste-border bg-white p-3 flex items-center justify-between shadow-sm">
+        <div><p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Shortages</p><p className="text-lg font-bold text-slate-900">{summary.shortages}</p></div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-orange-500"><ArrowDown size={16} /></div>
+      </div>
+      <div className="rounded-xl border border-taste-border bg-white p-3 flex items-center justify-between shadow-sm">
+        <div><p className="text-[11px] uppercase tracking-wide text-slate-500 font-semibold">Excesses</p><p className="text-lg font-bold text-slate-900">{summary.excesses}</p></div>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-500"><ArrowUp size={16} /></div>
+      </div>
+    </div>
+  );
 }
 
-function CountModal({ record, onClose, onSave, onSubmit }) {
+function CountModal({ record, onClose, onSubmit }) {
   const [items, setItems] = useState(record.items);
+  const [reason, setReason] = useState(record.reason || "");
   const [error, setError] = useState("");
-  const change = (index, field, value) => setItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: field === "physicalQuantity" ? (value === "" ? null : value) : value, variance: field === "physicalQuantity" && value !== "" ? Number(value) - item.systemQuantity : field === "physicalQuantity" ? null : item.variance } : item));
-  const draft = async () => { try { await onSave(items); } catch (saveError) { setError(saveError.message); } };
-  const submit = () => { const uncounted = items.some((item) => item.physicalQuantity === null || item.physicalQuantity === ""); const missingReason = items.some((item) => item.physicalQuantity !== null && Number(item.physicalQuantity) !== item.systemQuantity && !item.reason); if (uncounted) return setError("Count every item before submitting."); if (missingReason) return setError("Select a reason for every shortage or excess."); onSubmit(items); };
-  return <Modal open onClose={onClose} title={`Count inventory · ${record.id}`} className="max-w-5xl max-h-[calc(100vh-1rem)] overflow-y-auto" footer={<><Button variant="outline" onClick={onClose}>Close</Button><Button variant="secondary" onClick={draft}><FilePenLine size={16} />Save draft</Button><Button onClick={submit}><ClipboardCheck size={16} />Submit reconciliation</Button></>}><div className="space-y-5"><p className="text-sm leading-6 text-slate-600">System quantities are captured from the current branch inventory. Enter the physical count for every item.</p>{error && <p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>}<VarianceSummary items={items} /><div className="overflow-x-auto rounded-xl border border-taste-border"><table className="w-full min-w-[820px] text-left text-sm"><thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr><th className="px-3 py-3">Item</th><th className="px-3 py-3">System</th><th className="px-3 py-3">Actual count</th><th className="px-3 py-3">Variance</th><th className="px-3 py-3">Status</th><th className="px-3 py-3">Reason if different</th></tr></thead><tbody className="divide-y divide-taste-border">{items.map((item, index) => <tr key={item.ingredientId}><td className="px-3 py-3 font-semibold text-slate-900">{item.name}<span className="ml-1 font-normal text-slate-500">({item.unit})</span></td><td className="px-3 py-3">{formatQuantity(item.systemQuantity, item.unit)}</td><td className="px-3 py-3"><label className="sr-only" htmlFor={`count-${item.ingredientId}`}>Actual count for {item.name} in {item.unit}</label><Input id={`count-${item.ingredientId}`} type="number" min="0" step="0.01" inputMode="decimal" value={item.physicalQuantity ?? ""} onChange={(event) => change(index, "physicalQuantity", event.target.value)} placeholder={`0 ${item.unit}`} className="w-32" /></td><td className="px-3 py-3 font-semibold text-slate-800">{item.variance === null ? "—" : signed(item.variance, item.unit)}</td><td className="px-3 py-3"><CountBadge item={item} /></td><td className="px-3 py-3">{item.variance !== null && item.variance !== 0 ? <label className="sr-only" htmlFor={`reason-${item.ingredientId}`}>Reason for {item.name} variance</label> : null}{item.variance !== null && item.variance !== 0 ? <Select id={`reason-${item.ingredientId}`} value={item.reason ?? ""} onChange={(event) => change(index, "reason", event.target.value)} className="min-w-44"><option value="">Select reason</option>{reasons.map((reason) => <option key={reason}>{reason}</option>)}</Select> : <span className="text-slate-400">Not required</span>}</td></tr>)}</tbody></table></div></div></Modal>;
+
+  const change = (index, field, value) => setItems((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, [field]: field === "physicalQuantity" ? (value === "" ? null : value) : value, variance: field === "physicalQuantity" ? (value === "" ? null : Number(value) - item.systemQuantity) : item.variance } : item));
+  
+  
+  
+  const submit = () => { 
+    const uncounted = items.some((item) => item.physicalQuantity === null || item.physicalQuantity === ""); 
+    if (!reason || reason.trim() === "") return setError("Please provide a reason or description for this reconciliation.");
+    if (uncounted) return setError("Count every item before submitting."); 
+    onSubmit(items, reason); 
+  };
+  
+  return (
+    <Modal 
+      open 
+      onClose={onClose} 
+      title={`Start Reconciliation`} 
+      className="w-[95vw] max-w-[1000px] max-h-[90vh] flex flex-col" 
+      footer={<div className="flex w-full justify-between items-center"><Button variant="outline" onClick={onClose}>Cancel</Button><Button onClick={submit} className="bg-taste-pink hover:bg-taste-pink-strong text-white"><ClipboardCheck size={16} />Start Reconciliation</Button></div>}
+    >
+      <div className="flex flex-col h-full overflow-hidden space-y-4">
+        {error && <div className="shrink-0"><p role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p></div>}
+        <div className="shrink-0 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm bg-white p-2 rounded-xl border border-taste-border shadow-sm mb-2">
+          <div className="flex items-center gap-3 p-1">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-pink-50 text-taste-pink"><Store size={16} /></div>
+            <div>
+              <span className="block text-slate-500 text-[11px] font-semibold uppercase tracking-wider mb-0.5">Branch</span>
+              <span className="capitalize font-medium text-slate-900 text-sm">{record.branchId}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-1 sm:border-l border-taste-border sm:pl-4">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-50 text-taste-purple"><User size={16} /></div>
+            <div>
+              <span className="block text-slate-500 text-[11px] font-semibold uppercase tracking-wider mb-0.5">Started By</span>
+              <span className="block font-medium text-slate-900 text-sm leading-tight">{record.performedBy?.name}</span>
+              <span className="block text-[11px] text-slate-500">{record.performedBy?.role === "OWNER" ? "Owner / Manager" : record.performedBy?.role === "STAFF" ? "Staff" : record.performedBy?.role || "—"}</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 p-1 sm:border-l border-taste-border sm:pl-4">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-500"><Calendar size={16} /></div>
+            <div>
+              <span className="block text-slate-500 text-[11px] font-semibold uppercase tracking-wider mb-0.5">Date & Time</span>
+              <span className="font-medium text-slate-900 text-sm">{dateFormat.format(new Date(record.createdAt))}</span>
+            </div>
+          </div>
+        </div>
+        
+        <div className="shrink-0">
+          <label htmlFor="reconciliation-reason" className="block text-sm font-semibold text-slate-900 mb-1">Reason / Description</label>
+          <div className="relative">
+            <textarea
+              id="reconciliation-reason"
+              className="w-full rounded-lg border border-slate-300 p-2 pb-6 text-[13px] focus:border-taste-pink focus:outline-none focus:ring-1 focus:ring-taste-pink min-h-[60px]"
+              placeholder="e.g., Routine weekly stock count, discrepancy investigation, or post-delivery verification."
+              value={reason}
+              onChange={(e) => setReason(e.target.value.substring(0, 250))}
+            />
+            <div className="absolute bottom-1.5 right-2 text-[10px] text-slate-400 font-medium">
+              {reason.length}/250
+            </div>
+          </div>
+        </div>
+
+        <div className="shrink-0">
+          <VarianceSummary items={items} />
+        </div>
+
+        <div className="overflow-y-auto flex-1 min-h-0 rounded-xl border border-taste-border bg-white shadow-sm">
+          <table className="w-full min-w-[700px] text-left text-sm relative">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500 sticky top-0 z-10 shadow-sm">
+              <tr>
+                <th className="px-3 py-2 font-semibold">Item</th>
+                <th className="px-3 py-2 font-semibold w-16">Unit</th>
+                <th className="px-3 py-2 font-semibold w-24">System Qty</th>
+                <th className="px-3 py-2 font-semibold w-32">Actual Count</th>
+                <th className="px-3 py-2 font-semibold w-24">Variance</th>
+                <th className="px-3 py-2 font-semibold w-32">Status</th>
+                <th className="px-3 py-2 font-semibold w-40">Note (Optional)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-taste-border text-[13px]">
+              {items.map((item, index) => (
+                <tr key={item.ingredientId} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-3 py-2 font-semibold text-slate-900">
+                    {item.name}
+                  </td>
+                  <td className="px-3 py-2 text-slate-500">
+                    {item.unit}
+                  </td>
+                  <td className="px-3 py-2 text-slate-600">
+                    {formatQuantity(item.systemQuantity, item.unit)}
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <label className="sr-only" htmlFor={`count-${item.ingredientId}`}>Actual count for {item.name}</label>
+                      <Input 
+                        id={`count-${item.ingredientId}`} 
+                        type="number" 
+                        min="0" 
+                        step="0.01" 
+                        inputMode="decimal" 
+                        value={item.physicalQuantity ?? ""} 
+                        onChange={(event) => change(index, "physicalQuantity", event.target.value)} 
+                        placeholder={`0`} 
+                        className="w-16 h-8 text-right text-[13px]" 
+                      />
+                      <span className="text-slate-500 text-[11px]">{item.unit}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    {item.variance !== null ? (
+                      <span className={cn("font-medium", item.variance === 0 ? "text-slate-500" : item.variance > 0 ? "text-sky-600" : "text-rose-600")}>
+                        {signed(item.variance, item.unit)}
+                      </span>
+                    ) : (
+                      <span className="text-slate-300">—</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2">
+                    <CountBadge item={item} />
+                  </td>
+                  <td className="px-3 py-2">
+                    <Input
+                      value={item.note ?? ""}
+                      onChange={(event) => change(index, "note", event.target.value)}
+                      placeholder="Add note..."
+                      className={cn("w-full h-8 text-[12px] transition-opacity", item.variance === null || item.variance === 0 ? "opacity-50 focus:opacity-100" : "")}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Modal>
+  );
 }
 
-function DetailModal({ record, isOwner, onClose, onApply }) {
-  const summary = getReconciliationSummary(record);
-  return <Modal open onClose={onClose} title={`Reconciliation ${record.id}`} className="max-w-4xl max-h-[calc(100vh-1rem)] overflow-y-auto" footer={<><Button variant="outline" onClick={onClose}>Close</Button>{isOwner && record.status === "COMPLETED" && record.adjustmentStatus === "PENDING" && <Button onClick={onApply}>Apply inventory adjustment</Button>}</>}><div className="space-y-5"><div className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2"><p><span className="text-slate-500">Branch:</span> {record.branchId}</p><p><span className="text-slate-500">Status:</span> {reconciliationStatus(record)}</p><p><span className="text-slate-500">Counted by:</span> {record.performedBy.name}</p><p><span className="text-slate-500">Date:</span> {dateFormat.format(new Date(record.createdAt))}</p><p><span className="text-slate-500">Items with variance:</span> {summary.varianceItems}</p><p><span className="text-slate-500">Adjustment:</span> <AdjustmentBadge status={record.adjustmentStatus} /></p>{record.adjustedBy && <p className="sm:col-span-2"><span className="text-slate-500">Adjusted by:</span> {record.adjustedBy.name} on {dateFormat.format(new Date(record.adjustedAt))}</p>}</div><Table><TableHeader><TableRow><TableCell as="th">Item</TableCell><TableCell as="th">System</TableCell><TableCell as="th">Actual</TableCell><TableCell as="th">Variance</TableCell><TableCell as="th">Reason</TableCell></TableRow></TableHeader><TableBody>{record.items.map((item) => <TableRow key={item.ingredientId}><TableCell className="font-medium text-slate-900">{item.name}</TableCell><TableCell>{formatQuantity(item.systemQuantity, item.unit)}</TableCell><TableCell>{item.physicalQuantity === null ? "Uncounted" : formatQuantity(item.physicalQuantity, item.unit)}</TableCell>{item.variance === null ? <TableCell>—</TableCell> : <TableCell><span className="font-medium">{signed(item.variance, item.unit)}</span><span className="ml-2"><CountBadge item={item} /></span></TableCell>}<TableCell>{item.reason || "—"}</TableCell></TableRow>)}</TableBody></Table></div></Modal>;
-}
 
 export default function Reconciliation() {
-  const { currentUser } = useAuth(); const { currentBranch } = useBranch(); const isOwner = currentUser?.role === "OWNER";
-  const [records, setRecords] = useState([]); const [loading, setLoading] = useState(true); const [loadedBranch, setLoadedBranch] = useState(null); const [error, setError] = useState(""); const [search, setSearch] = useState(""); const [status, setStatus] = useState("ALL"); const [date, setDate] = useState("ALL"); const [activeRecord, setActiveRecord] = useState(null); const [detail, setDetail] = useState(null); const [confirmSubmit, setConfirmSubmit] = useState(null); const [confirmAdjustment, setConfirmAdjustment] = useState(null); const [toast, setToast] = useState({ open: false, message: "", variant: "success" }); const [filterTime] = useState(() => Date.now());
-  const load = async () => { if (!currentBranch?.id) return; setLoading(true); try { setRecords(await getReconciliations(currentBranch.id)); setError(""); } catch (loadError) { setError(loadError.message); } finally { setLoadedBranch(currentBranch.id); setLoading(false); } };
-  useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer); }, [currentBranch?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { currentUser } = useAuth();
+  const { currentBranch } = useBranch();
+  const isOwner = currentUser?.role === "OWNER";
+
+  const [records, setRecords] = useState([]);
+  const [inventory, setInventory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadedBranch, setLoadedBranch] = useState(null);
+  const [error, setError] = useState("");
+
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("ALL");
+  const [date, setDate] = useState("ALL");
+  const [customDateStart, setCustomDateStart] = useState("");
+  const [customDateEnd, setCustomDateEnd] = useState("");
+  const [activeDropdown, setActiveDropdown] = useState(null);
+
+  const [activeRecord, setActiveRecord] = useState(null);
+  const [selectedItem, setSelectedItem] = useState(null);
+  const [confirmSubmit, setConfirmSubmit] = useState(null);
+  const [confirmAdjustment, setConfirmAdjustment] = useState(null);
+  const [toast, setToast] = useState({ open: false, message: "", variant: "success" });
+
+  const load = async () => {
+    if (!currentBranch?.id) return;
+    setLoading(true);
+    try {
+      const [recs, inv] = await Promise.all([
+        getReconciliations(currentBranch.id),
+        getInventory(currentBranch.id)
+      ]);
+      setRecords(recs);
+      setInventory(inv);
+      setError("");
+    } catch (loadError) {
+      setError(loadError.message);
+    } finally {
+      setLoadedBranch(currentBranch.id);
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(load, 0);
+    return () => clearTimeout(timer);
+  }, [currentBranch?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const handleClickOutside = () => setActiveDropdown(null);
+    document.addEventListener("click", handleClickOutside);
+    return () => document.removeEventListener("click", handleClickOutside);
+  }, []);
+
   const notify = (message, variant = "success") => setToast({ open: true, message, variant });
-  const filtered = useMemo(() => records.filter((record) => { const term = search.toLowerCase().trim(); const matchesSearch = !term || `${record.id} ${record.performedBy.name}`.toLowerCase().includes(term); const matchesStatus = status === "ALL" || record.status === status; const age = filterTime - new Date(record.createdAt).getTime(); const matchesDate = date === "ALL" || (date === "TODAY" && age < 86400000) || (date === "WEEK" && age < 604800000); return matchesSearch && matchesStatus && matchesDate; }), [records, search, status, date, filterTime]);
-  const summaries = useMemo(() => records.reduce((total, record) => { const summary = getReconciliationSummary(record); total.pending += record.status === "DRAFT" ? 1 : 0; total.variance += summary.varianceItems; total.positive += summary.positiveItems; total.negative += summary.negativeItems; return total; }, { pending: 0, variance: 0, positive: 0, negative: 0 }), [records]);
-  const hasFilters = search || status !== "ALL" || date !== "ALL";
-  const start = async () => { try { const record = await createReconciliation(currentBranch.id, currentUser); setRecords(await getReconciliations(currentBranch.id)); setActiveRecord(record); } catch (startError) { notify(startError.message, "danger"); } };
-  const save = async (items) => { const saved = await saveDraft(currentBranch.id, activeRecord.id, items, currentUser); setRecords(await getReconciliations(currentBranch.id)); setActiveRecord(saved); notify("Reconciliation draft saved."); };
-  const submit = async () => { try { const saved = await submitReconciliation(currentBranch.id, confirmSubmit.id, confirmSubmit.items, currentUser); setRecords(await getReconciliations(currentBranch.id)); setActiveRecord(null); setConfirmSubmit(null); setDetail(saved); notify("Reconciliation submitted successfully."); } catch (submitError) { setConfirmSubmit(null); notify(submitError.message, "danger"); } };
-  const apply = async () => { try { const saved = await applyAdjustment(currentBranch.id, confirmAdjustment.id, currentUser); setRecords(await getReconciliations(currentBranch.id)); setDetail(saved); setConfirmAdjustment(null); notify("Inventory quantities were adjusted from the verified counts."); } catch (adjustmentError) { setConfirmAdjustment(null); notify(adjustmentError.message, "danger"); } };
-  const openDetail = async (record) => { try { setDetail(await getReconciliationDetails(currentBranch.id, record.id)); } catch (detailError) { notify(detailError.message, "danger"); } };
+
+  const flatItems = useMemo(() => {
+    const inventoryMap = new Map(inventory.map(item => [item.id, item]));
+    const latestEvents = new Map();
+    const historyEvents = new Map();
+
+    records.forEach(record => {
+      record.items.forEach(item => {
+        const invItem = inventoryMap.get(item.ingredientId);
+        if (!invItem) return;
+        
+        const event = {
+          ...item,
+          reconciliationId: record.id,
+          reconciliationStatus: record.status,
+          adjustmentStatus: record.adjustmentStatus,
+          reconciliationType: "Stock Count",
+          date: record.createdAt,
+          branch: record.branchId,
+          performedBy: record.performedBy?.name || "Unknown",
+          performedByRole: record.performedBy?.role === "OWNER" ? "Owner / Manager" : record.performedBy?.role === "STAFF" ? "Staff" : record.performedBy?.role || "—",
+          reconciliationReason: record.reason || "",
+          category: invItem.category,
+          supplier: invItem.supplier,
+          costPerUnit: invItem.costPerUnit,
+          note: item.note || "",
+          derivedStatus: getItemStatus({ ...item, reconciliationStatus: record.status })
+        };
+
+        if (!historyEvents.has(item.ingredientId)) historyEvents.set(item.ingredientId, []);
+        historyEvents.get(item.ingredientId).push(event);
+
+        if (!latestEvents.has(item.ingredientId) || new Date(record.createdAt) > new Date(latestEvents.get(item.ingredientId).date)) {
+          latestEvents.set(item.ingredientId, event);
+        }
+      });
+    });
+
+    inventory.forEach(invItem => {
+      if (!invItem.active) return;
+      if (!latestEvents.has(invItem.id)) {
+        const pendingEvent = {
+          ingredientId: invItem.id,
+          name: invItem.name,
+          unit: invItem.unit,
+          category: invItem.category,
+          supplier: invItem.supplier,
+          costPerUnit: invItem.costPerUnit,
+          systemQuantity: invItem.currentQuantity,
+          physicalQuantity: null,
+          variance: null,
+          reason: "",
+          reconciliationId: null,
+          reconciliationStatus: "PENDING",
+          adjustmentStatus: "NOT_APPLICABLE",
+          date: null,
+          branch: currentBranch.id,
+          performedBy: "—",
+          performedByRole: "—",
+          derivedStatus: "pending"
+        };
+        latestEvents.set(invItem.id, pendingEvent);
+      }
+    });
+
+    return { latest: Array.from(latestEvents.values()), history: historyEvents };
+  }, [records, inventory, currentBranch.id]);
+
+  const summaries = useMemo(() => {
+    return flatItems.latest.reduce((acc, item) => {
+      acc.total += 1;
+      if (item.derivedStatus === "matched") acc.matched += 1;
+      else if (item.derivedStatus === "discrepancy") acc.discrepancies += 1;
+      else if (item.derivedStatus === "pending") acc.pending += 1;
+      return acc;
+    }, { total: 0, matched: 0, discrepancies: 0, pending: 0 });
+  }, [flatItems]);
+
+  const filtered = useMemo(() => {
+    return flatItems.latest.filter(item => {
+      const term = search.toLowerCase().trim();
+      const matchesSearch = !term || 
+        item.name.toLowerCase().includes(term) || 
+        (item.category && item.category.toLowerCase().includes(term)) ||
+        (item.supplier && item.supplier.toLowerCase().includes(term)) ||
+        (item.reconciliationId && item.reconciliationId.toLowerCase().includes(term)) ||
+        (item.performedBy && item.performedBy.toLowerCase().includes(term));
+      
+      const matchesStatus = status === "ALL" || 
+        (status === "MATCHED" && item.derivedStatus === "matched") ||
+        (status === "DISCREPANCY" && item.derivedStatus === "discrepancy") ||
+        (status === "PENDING" && item.derivedStatus === "pending");
+
+      let matchesDate = true;
+      if (date !== "ALL" && item.date) {
+        const itemDate = new Date(item.date);
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const diffDays = Math.floor((new Date() - itemDate) / (1000 * 60 * 60 * 24));
+        
+        if (date === "TODAY") matchesDate = diffDays === 0;
+        else if (date === "YESTERDAY") matchesDate = diffDays === 1;
+        else if (date === "THIS_WEEK") matchesDate = diffDays <= 7; 
+        else if (date === "LAST_WEEK") matchesDate = diffDays > 7 && diffDays <= 14;
+        else if (date === "THIS_MONTH") matchesDate = itemDate.getMonth() === new Date().getMonth() && itemDate.getFullYear() === new Date().getFullYear();
+        else if (date === "LAST_MONTH") matchesDate = itemDate.getMonth() === (new Date().getMonth() - 1 + 12) % 12;
+        else if (date === "CUSTOM") {
+          if (customDateStart) matchesDate = matchesDate && itemDate >= new Date(customDateStart);
+          if (customDateEnd) matchesDate = matchesDate && itemDate <= new Date(customDateEnd + "T23:59:59");
+        }
+      } else if (date !== "ALL" && !item.date) {
+        matchesDate = false;
+      }
+
+      return matchesSearch && matchesStatus && matchesDate;
+    });
+  }, [flatItems, search, status, date, customDateStart, customDateEnd]);
+
+  const start = async () => {
+    try {
+      const record = await createReconciliation(currentBranch.id, currentUser);
+      setRecords(await getReconciliations(currentBranch.id));
+      setActiveRecord(record);
+    } catch (startError) {
+      notify(startError.message, "danger");
+    }
+  };
+
+  const save = async (items, reason) => {
+    const saved = await saveDraft(currentBranch.id, activeRecord.id, items, reason, currentUser);
+    setRecords(await getReconciliations(currentBranch.id));
+    setActiveRecord(saved);
+    notify("Reconciliation draft saved.");
+  };
+
+  const submit = async () => {
+    try {
+      await submitReconciliation(currentBranch.id, confirmSubmit.id, confirmSubmit.items, confirmSubmit.reason, currentUser);
+      setRecords(await getReconciliations(currentBranch.id));
+      setActiveRecord(null);
+      setConfirmSubmit(null);
+      notify("Reconciliation submitted successfully.");
+    } catch (submitError) {
+      setConfirmSubmit(null);
+      notify(submitError.message, "danger");
+    }
+  };
+
+  const apply = async () => {
+    try {
+      await applyAdjustment(currentBranch.id, confirmAdjustment.id, currentUser);
+      setRecords(await getReconciliations(currentBranch.id));
+      setConfirmAdjustment(null);
+      setSelectedItem(null);
+      notify("Inventory quantities were adjusted from the verified counts.");
+    } catch (adjustmentError) {
+      setConfirmAdjustment(null);
+      notify(adjustmentError.message, "danger");
+    }
+  };
+
   if (loading || loadedBranch !== currentBranch?.id) return <PageContainer><LoadingState label="Loading reconciliations" /></PageContainer>;
   if (error || !currentBranch) return <PageContainer><ErrorState title="Reconciliation unavailable" description={error || "Select a branch to continue."} /></PageContainer>;
-  return <PageContainer><PageHeader title="Inventory Reconciliation" description="Compare recorded inventory with physical counts and review stock variances." meta={<Badge variant="purple">{currentBranch.name}</Badge>} actions={<Button onClick={start}><ClipboardCheck size={16} />Start reconciliation</Button>} /><ResponsiveGrid className="mt-7"><StatCard label="Pending reconciliations" value={summaries.pending} icon={FilePenLine} /><StatCard label="Items with variance" value={summaries.variance} icon={TriangleAlert} /><StatCard label="Positive variance items" value={summaries.positive} icon={Plus} className="border-sky-200" /><StatCard label="Negative variance items" value={summaries.negative} icon={Minus} className="border-amber-200" /></ResponsiveGrid><FilterBar className="mt-7"><SearchInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search ID or counted by" aria-label="Search reconciliations" className="sm:max-w-sm" /><Select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter reconciliation status" className="sm:max-w-48"><option value="ALL">All statuses</option><option value="DRAFT">Draft</option><option value="COMPLETED">Completed</option></Select><Select value={date} onChange={(event) => setDate(event.target.value)} aria-label="Filter reconciliation date" className="sm:max-w-48"><option value="ALL">All dates</option><option value="TODAY">Last 24 hours</option><option value="WEEK">Last 7 days</option></Select>{hasFilters && <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setStatus("ALL"); setDate("ALL"); }}>Clear filters</Button>}</FilterBar><ContentCard className="mt-7"><SectionHeader title="Reconciliation records" description={`${filtered.length} record${filtered.length === 1 ? "" : "s"} for ${currentBranch.name}.`} />{filtered.length ? <><div className="mt-5 hidden lg:block"><Table><TableHeader><TableRow><TableCell as="th">Reconciliation</TableCell><TableCell as="th">Date</TableCell><TableCell as="th">Counted by</TableCell><TableCell as="th">Items</TableCell><TableCell as="th">With variance</TableCell><TableCell as="th">Positive / negative</TableCell><TableCell as="th">Status</TableCell><TableCell as="th"><span className="sr-only">View</span></TableCell></TableRow></TableHeader><TableBody>{filtered.map((record) => { const summary = getReconciliationSummary(record); return <TableRow key={record.id}><TableCell className="font-semibold text-slate-900">{record.id}<p className="mt-1 text-xs font-normal text-slate-500">{currentBranch.name}</p></TableCell><TableCell className="whitespace-nowrap text-slate-500">{dateFormat.format(new Date(record.createdAt))}</TableCell><TableCell>{record.performedBy.name}</TableCell><TableCell>{summary.itemCount}</TableCell><TableCell>{summary.varianceItems}</TableCell><TableCell>+{summary.positiveItems} / −{summary.negativeItems}</TableCell><TableCell>{reconciliationStatus(record)}</TableCell><TableCell><Button variant="ghost" size="sm" onClick={() => record.status === "DRAFT" ? setActiveRecord(record) : openDetail(record)} aria-label={`Open ${record.id}`}><Eye size={17} />{record.status === "DRAFT" ? "Continue" : "View"}</Button></TableCell></TableRow>; })}</TableBody></Table></div><div className="mt-5 grid gap-3 lg:hidden">{filtered.map((record) => { const summary = getReconciliationSummary(record); return <div key={record.id} className="rounded-xl border border-taste-border p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{record.id}</p><p className="mt-1 text-sm text-slate-500">{record.performedBy.name} · {dateFormat.format(new Date(record.createdAt))}</p></div>{reconciliationStatus(record)}</div><div className="mt-4 grid grid-cols-2 gap-2 text-sm"><p>Items: <strong>{summary.itemCount}</strong></p><p>Variance: <strong>{summary.varianceItems}</strong></p><p>Positive: <strong>+{summary.positiveItems}</strong></p><p>Negative: <strong>−{summary.negativeItems}</strong></p></div><Button variant="outline" size="sm" className="mt-4 w-full" onClick={() => record.status === "DRAFT" ? setActiveRecord(record) : openDetail(record)}>{record.status === "DRAFT" ? "Continue draft" : "View details"}</Button></div>; })}</div></> : <div className="mt-5"><EmptyState title="No matching reconciliations" description={hasFilters ? "Try changing or clearing the filters." : "Start a reconciliation to record a physical count."} action={!hasFilters ? <Button onClick={start}>Start reconciliation</Button> : null} /></div>}</ContentCard>{activeRecord && <CountModal record={activeRecord} onClose={() => setActiveRecord(null)} onSave={save} onSubmit={(items) => setConfirmSubmit({ ...activeRecord, items })} />}{detail && <DetailModal record={detail} isOwner={isOwner} onClose={() => setDetail(null)} onApply={() => setConfirmAdjustment(detail)} />}{confirmSubmit && <ConfirmDialog open onClose={() => setConfirmSubmit(null)} onConfirm={submit} title="Submit reconciliation?" description={`${confirmSubmit.items.filter((item) => Number(item.physicalQuantity) !== item.systemQuantity).length} item(s) have a variance. This saves the verified count but does not change recorded inventory until an Owner explicitly applies an adjustment.`} confirmLabel="Submit reconciliation" />}{confirmAdjustment && <ConfirmDialog open onClose={() => setConfirmAdjustment(null)} onConfirm={apply} title="Apply inventory adjustment?" description="This will update recorded inventory quantities to the verified physical counts for items with a variance. This action is recorded on the reconciliation." confirmLabel="Apply adjustment" />}<Toast open={toast.open} variant={toast.variant} onClose={() => setToast((current) => ({ ...current, open: false }))}>{toast.message}</Toast></PageContainer>;
+
+  return (
+    <PageContainer>
+
+
+      <ResponsiveGrid className="mt-7" columns="four">
+        <button onClick={() => setStatus("ALL")} className={cn("text-left transition-all rounded-2xl", status === "ALL" ? "ring-2 ring-taste-purple ring-offset-2" : "hover:scale-[1.02]")}>
+          <StatCard label="Total Items" value={summaries.total} trend="All inventory items" icon={ClipboardCheck} className="h-full" />
+        </button>
+        <button onClick={() => setStatus("MATCHED")} className={cn("text-left transition-all rounded-2xl", status === "MATCHED" ? "ring-2 ring-emerald-500 ring-offset-2" : "hover:scale-[1.02]")}>
+          <StatCard label="Matched" value={summaries.matched} trend="No discrepancies" icon={CheckCircle2} className="h-full border-emerald-200" />
+        </button>
+        <button onClick={() => setStatus("DISCREPANCY")} className={cn("text-left transition-all rounded-2xl", status === "DISCREPANCY" ? "ring-2 ring-amber-500 ring-offset-2" : "hover:scale-[1.02]")}>
+          <StatCard label="Discrepancies" value={summaries.discrepancies} trend="Needs adjustment" icon={TriangleAlert} className="h-full border-amber-200" />
+        </button>
+        <button onClick={() => setStatus("PENDING")} className={cn("text-left transition-all rounded-2xl", status === "PENDING" ? "ring-2 ring-taste-purple ring-offset-2" : "hover:scale-[1.02]")}>
+          <StatCard label="Pending" value={summaries.pending} trend="Not yet reconciled" icon={FilePenLine} className="h-full" />
+        </button>
+      </ResponsiveGrid>
+
+      <FilterBar className="mt-7 flex-wrap items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3 flex-1 w-full xl:w-auto">
+          <SearchInput 
+            value={search} 
+            onChange={(e) => setSearch(e.target.value)} 
+            placeholder="Search ingredient, category, supplier..." 
+            aria-label="Search reconciliations" 
+            className="w-full sm:w-auto flex-1 min-w-[200px] max-w-[320px]" 
+          />
+          
+          <div className="relative w-full sm:w-auto flex-1 min-w-[140px] max-w-[220px]">
+            <Button variant="outline" className="w-full justify-between bg-white text-slate-700" onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown === "status" ? null : "status"); }}>
+              <span className="truncate">
+                {status === "ALL" ? "All Statuses" : status === "MATCHED" ? "Matched" : status === "DISCREPANCY" ? "Discrepancy" : "Pending"}
+              </span>
+              <ChevronDown size={16} className="text-slate-400 shrink-0 ml-2" />
+            </Button>
+            <Dropdown open={activeDropdown === "status"} className="left-0 w-full min-w-48 p-2">
+              {[
+                { value: "ALL", label: "All Statuses" },
+                { value: "MATCHED", label: "Matched" },
+                { value: "DISCREPANCY", label: "Discrepancy" },
+                { value: "PENDING", label: "Pending" }
+              ].map(opt => (
+                <button key={opt.value} type="button" className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50" onClick={() => { setStatus(opt.value); setActiveDropdown(null); }}>
+                  <span className={cn(status === opt.value ? "font-semibold text-taste-purple" : "text-slate-700")}>{opt.label}</span>
+                  {status === opt.value && <Check size={16} className="text-taste-purple" />}
+                </button>
+              ))}
+            </Dropdown>
+          </div>
+
+          <div className="relative w-full sm:w-auto flex-1 min-w-[140px] max-w-[220px]">
+            <Button variant="outline" className="w-full justify-between bg-white text-slate-700" onClick={(e) => { e.stopPropagation(); setActiveDropdown(activeDropdown === "date" ? null : "date"); }}>
+              <span className="truncate">
+                {date === "ALL" ? "All Dates" : date === "TODAY" ? "Today" : date === "YESTERDAY" ? "Yesterday" : date === "THIS_WEEK" ? "This Week" : date === "LAST_WEEK" ? "Last Week" : date === "THIS_MONTH" ? "This Month" : date === "LAST_MONTH" ? "Last Month" : "Custom Range"}
+              </span>
+              <ChevronDown size={16} className="text-slate-400 shrink-0 ml-2" />
+            </Button>
+            <Dropdown open={activeDropdown === "date"} className="left-0 w-full min-w-48 p-2" onClick={(e) => e.stopPropagation()}>
+              {[
+                { value: "ALL", label: "All Dates" },
+                { value: "TODAY", label: "Today" },
+                { value: "YESTERDAY", label: "Yesterday" },
+                { value: "THIS_WEEK", label: "This Week" },
+                { value: "LAST_WEEK", label: "Last Week" },
+                { value: "THIS_MONTH", label: "This Month" },
+                { value: "LAST_MONTH", label: "Last Month" },
+                { value: "CUSTOM", label: "Custom Date Range" }
+              ].map(opt => (
+                <button key={opt.value} type="button" className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-slate-50" onClick={() => { setDate(opt.value); if (opt.value !== "CUSTOM") setActiveDropdown(null); }}>
+                  <span className={cn(date === opt.value ? "font-semibold text-taste-purple" : "text-slate-700")}>{opt.label}</span>
+                  {date === opt.value && <Check size={16} className="text-taste-purple" />}
+                </button>
+              ))}
+              {date === "CUSTOM" && (
+                <div className="p-3 border-t border-slate-100 mt-2 space-y-3">
+                  <div>
+                    <label className="text-xs text-slate-500 font-medium">Start Date</label>
+                    <Input type="date" value={customDateStart} onChange={(e) => setCustomDateStart(e.target.value)} className="w-full text-sm mt-1" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 font-medium">End Date</label>
+                    <Input type="date" value={customDateEnd} onChange={(e) => setCustomDateEnd(e.target.value)} className="w-full text-sm mt-1" />
+                  </div>
+                  <Button size="sm" className="w-full" onClick={() => setActiveDropdown(null)}>Apply</Button>
+                </div>
+              )}
+            </Dropdown>
+          </div>
+        </div>
+        
+        <Button onClick={start} className="bg-taste-purple hover:bg-taste-purple-strong text-white w-full lg:w-auto shrink-0">
+          <ClipboardCheck size={16} />Start Reconciliation
+        </Button>
+      </FilterBar>
+
+      <ContentCard className="mt-7 p-0 overflow-hidden">
+        {filtered.length ? (
+          <div className="overflow-x-auto">
+            <Table className="min-w-[800px]">
+              <TableHeader>
+                <TableRow>
+                  <TableCell as="th">Ingredient</TableCell>
+                  <TableCell as="th">Category</TableCell>
+                  <TableCell as="th">System Stock</TableCell>
+                  <TableCell as="th">Physical Count</TableCell>
+                  <TableCell as="th">Variance</TableCell>
+                  <TableCell as="th">Status</TableCell>
+                  <TableCell as="th">Performed By</TableCell>
+                  <TableCell as="th">Date & Time</TableCell>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map(item => (
+                  <TableRow key={item.ingredientId} className={cn("cursor-pointer transition-colors hover:bg-slate-50", selectedItem?.ingredientId === item.ingredientId ? "bg-slate-50" : "")} onClick={() => setSelectedItem(item)}>
+                    <TableCell className="font-semibold text-slate-900">{item.name}</TableCell>
+                    <TableCell>{item.category}</TableCell>
+                    <TableCell>{formatQuantity(item.systemQuantity, item.unit)}</TableCell>
+                    <TableCell>{item.physicalQuantity === null ? "—" : formatQuantity(item.physicalQuantity, item.unit)}</TableCell>
+                    <TableCell className="font-medium text-slate-900">{item.variance === null ? "—" : signed(item.variance, item.unit)}</TableCell>
+                    <TableCell><ItemStatusBadge status={item.derivedStatus} /></TableCell>
+                    <TableCell>
+                      {item.performedBy !== "—" ? (
+                        <>
+                          <span className="block text-slate-900">{item.performedBy}</span>
+                          <span className="block text-xs text-slate-500">{item.performedByRole}</span>
+                        </>
+                      ) : "—"}
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap text-slate-500">{item.date ? dateFormat.format(new Date(item.date)) : "—"}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <div className="p-8">
+            <EmptyState title="No matching items" description="Try changing or clearing your filters." />
+          </div>
+        )}
+      </ContentCard>
+
+      {selectedItem && (
+        <Drawer 
+          open 
+          onClose={() => setSelectedItem(null)} 
+          title="Reconciliation Details"
+          footer={
+            <>
+              <Button className="w-full bg-taste-purple hover:bg-taste-purple-strong text-white" onClick={() => setSelectedItem(null)}>Close Details</Button>
+              {isOwner && selectedItem.reconciliationStatus === "COMPLETED" && selectedItem.adjustmentStatus === "PENDING" && (
+                <Button variant="outline" className="w-full mt-2" onClick={() => {
+                  const record = records.find(r => r.id === selectedItem.reconciliationId);
+                  if (record) setConfirmAdjustment(record);
+                }}>
+                  Apply Inventory Adjustment
+                </Button>
+              )}
+              {selectedItem.reconciliationStatus === "DRAFT" && (
+                <Button variant="outline" className="w-full mt-2" onClick={() => {
+                  const record = records.find(r => r.id === selectedItem.reconciliationId);
+                  if (record) {
+                    setActiveRecord(record);
+                    setSelectedItem(null);
+                  }
+                }}>
+                  Continue Draft
+                </Button>
+              )}
+            </>
+          }
+        >
+          <div className="space-y-8 p-1">
+            
+            {/* Drawer Summary */}
+            <div className="flex flex-col gap-2">
+              <div className="flex items-start justify-between gap-4">
+                <h3 className="text-xl font-bold text-slate-900">{selectedItem.name}</h3>
+                <ItemStatusBadge status={selectedItem.derivedStatus} />
+              </div>
+              <p className="text-sm font-medium text-slate-500">{selectedItem.category}</p>
+            </div>
+
+            {/* Summary Cards */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="rounded-xl border border-taste-border bg-slate-50 p-4">
+                <p className="text-xs font-medium text-slate-500">System Stock</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{formatQuantity(selectedItem.systemQuantity, selectedItem.unit)}</p>
+              </div>
+              <div className="rounded-xl border border-taste-border bg-slate-50 p-4">
+                <p className="text-xs font-medium text-slate-500">Physical Count</p>
+                <p className="mt-1 text-lg font-bold text-slate-900">{selectedItem.physicalQuantity === null ? "—" : formatQuantity(selectedItem.physicalQuantity, selectedItem.unit)}</p>
+              </div>
+              <div className="rounded-xl border border-taste-border bg-slate-50 p-4">
+                <p className="text-xs font-medium text-slate-500">Variance</p>
+                <p className={cn("mt-1 text-lg font-bold", selectedItem.variance === 0 || selectedItem.variance === null ? "text-slate-900" : selectedItem.variance > 0 ? "text-sky-600" : "text-amber-600")}>
+                  {selectedItem.variance === null ? "—" : signed(selectedItem.variance, selectedItem.unit)}
+                </p>
+              </div>
+            </div>
+
+            {/* Reconciliation Information */}
+            <div>
+              <h4 className="mb-3 text-sm font-semibold text-slate-900">Reconciliation Information</h4>
+              <div className="grid grid-cols-2 gap-y-3 rounded-xl border border-taste-border bg-slate-50 p-5 text-sm">
+                <div className="text-slate-500">Reconciliation ID</div>
+                <div className="text-right font-medium text-slate-900">{selectedItem.reconciliationId || "—"}</div>
+                
+                <div className="text-slate-500">Type</div>
+                <div className="text-right font-medium text-slate-900">{selectedItem.reconciliationId ? "Stock Count" : "—"}</div>
+                
+                <div className="text-slate-500">Branch</div>
+                <div className="text-right font-medium text-slate-900 capitalize">{selectedItem.branch || "—"}</div>
+                
+                <div className="text-slate-500">Date & Time</div>
+                <div className="text-right font-medium text-slate-900">{selectedItem.date ? dateFormat.format(new Date(selectedItem.date)) : "—"}</div>
+                
+                <div className="text-slate-500">Performed By</div>
+                <div className="text-right font-medium text-slate-900">{selectedItem.performedBy}</div>
+                
+                <div className="text-slate-500">Role</div>
+                <div className="text-right font-medium text-slate-900">{selectedItem.performedByRole}</div>
+              </div>
+            </div>
+
+            {/* Item Information */}
+            <div>
+              <h4 className="mb-3 text-sm font-semibold text-slate-900">Item Information</h4>
+              <div className="grid grid-cols-2 gap-y-3 rounded-xl border border-taste-border bg-slate-50 p-5 text-sm">
+                <div className="text-slate-500">Unit</div>
+                <div className="text-right font-medium text-slate-900">{selectedItem.unit}</div>
+                
+                <div className="text-slate-500">Category</div>
+                <div className="text-right font-medium text-slate-900">{selectedItem.category}</div>
+                
+                <div className="text-slate-500">Supplier</div>
+                <div className="text-right font-medium text-slate-900">{selectedItem.supplier || "Not specified"}</div>
+                
+                {selectedItem.costPerUnit !== undefined && (
+                  <>
+                    <div className="text-slate-500">Cost per unit</div>
+                    <div className="text-right font-medium text-slate-900">₱{numberFormat.format(selectedItem.costPerUnit)}</div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Reconciliation Notes */}
+            <div>
+              <h4 className="mb-3 text-sm font-semibold text-slate-900">Reconciliation Notes</h4>
+              <div className="rounded-xl border border-taste-border bg-slate-50 p-5 text-sm">
+                {selectedItem.reconciliationReason ? (
+                  <p className="text-slate-900 whitespace-pre-wrap">{selectedItem.reconciliationReason}</p>
+                ) : (
+                  <p className="text-slate-500 italic">No description provided.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Reconciliation History */}
+            {flatItems.history.get(selectedItem.ingredientId) && flatItems.history.get(selectedItem.ingredientId).length > 0 && (
+              <div>
+                <h4 className="mb-3 text-sm font-semibold text-slate-900">Reconciliation History</h4>
+                <ul className="space-y-3">
+                  {flatItems.history.get(selectedItem.ingredientId).map(historyEvent => (
+                    <li key={historyEvent.reconciliationId} className="rounded-xl border border-taste-border bg-slate-50 p-4 text-sm">
+                      <div className="flex justify-between font-medium mb-1">
+                        <span className={historyEvent.variance === 0 ? "text-emerald-600" : "text-amber-600"}>
+                          {historyEvent.variance === 0 ? "Matched" : "Discrepancy"}
+                        </span>
+                        <span className="text-slate-900">
+                          {formatQuantity(historyEvent.systemQuantity, historyEvent.unit)} vs {formatQuantity(historyEvent.physicalQuantity, historyEvent.unit)} ({signed(historyEvent.variance, historyEvent.unit)})
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-slate-500 text-xs">
+                        <span>{dateFormat.format(new Date(historyEvent.date))}</span>
+                        <span>by {historyEvent.performedBy}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Drawer>
+      )}
+
+      {activeRecord && <CountModal record={activeRecord} onClose={() => setActiveRecord(null)} onSave={save} onSubmit={(items, reason) => setConfirmSubmit({ ...activeRecord, items, reason })} />}
+      
+      {confirmSubmit && <ConfirmDialog open onClose={() => setConfirmSubmit(null)} onConfirm={submit} title="Submit reconciliation?" description={`${confirmSubmit.items.filter((item) => Number(item.physicalQuantity) !== item.systemQuantity).length} item(s) have a variance. This saves the verified count but does not change recorded inventory until an Owner explicitly applies an adjustment.`} confirmLabel="Submit reconciliation" />}
+      {confirmAdjustment && <ConfirmDialog open onClose={() => setConfirmAdjustment(null)} onConfirm={apply} title="Apply inventory adjustment?" description="This will update recorded inventory quantities to the verified physical counts for items with a variance. This action is recorded on the reconciliation." confirmLabel="Apply adjustment" />}
+      
+      <Toast open={toast.open} variant={toast.variant} onClose={() => setToast((current) => ({ ...current, open: false }))}>{toast.message}</Toast>
+    </PageContainer>
+  );
 }

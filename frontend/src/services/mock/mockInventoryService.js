@@ -29,6 +29,8 @@ const initialInventoryByBranch = {
 };
 
 const INVENTORY_STORAGE_KEY = "tasteit_inventory";
+const HISTORY_STORAGE_KEY = "tasteit_inventory_history";
+
 function readInventoryState() {
   try {
     const stored = JSON.parse(localStorage.getItem(INVENTORY_STORAGE_KEY));
@@ -38,8 +40,55 @@ function readInventoryState() {
   localStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(inventory));
   return inventory;
 }
+
 function persistInventoryState() { localStorage.setItem(INVENTORY_STORAGE_KEY, JSON.stringify(inventoryByBranch)); }
+
+const initialHistoryByBranch = {
+  babag: [
+    { id: "HIS-BAB-001", itemId: "bab-egg", change: "21 → 20 pc", variance: -1, user: { id: "owner-1", name: "Alex Rivera", role: "OWNER" }, type: "Reconciliation", reason: "Physical count discrepancy discovered during routine inventory reconciliation.", reference: "REC-MAR-008", timestamp: "2026-08-27T00:30:00.000Z" },
+    { id: "HIS-BAB-002", itemId: "bab-bun", change: "26 → 46 pc", variance: 20, user: { id: "staff-1", name: "John Cruz", role: "STAFF" }, type: "Restock", reason: "New delivery received from supplier.", reference: "RST-0008", timestamp: "2026-08-26T14:15:00.000Z" },
+    { id: "HIS-BAB-003", itemId: "bab-cheese", change: "22 → 17 slice", variance: -5, user: { id: "staff-2", name: "Maria Santos", role: "STAFF" }, type: "Stock Adjustment", reason: "Damaged stock removed from inventory.", reference: "ADJ-0011", timestamp: "2026-08-26T10:05:00.000Z" },
+    { id: "HIS-BAB-004", itemId: "bab-beef-patty", change: "34 → 64 pc", variance: 30, user: { id: "owner-1", name: "Alex Rivera", role: "OWNER" }, type: "Restock", reason: "Supplier delivery received.", reference: "RST-0007", timestamp: "2026-08-25T08:30:00.000Z" },
+    { id: "HIS-BAB-005", itemId: "bab-chicken", change: "18 → 15 pc", variance: -3, user: { id: "staff-2", name: "Maria Santos", role: "STAFF" }, type: "Stock Adjustment", reason: "Spoiled stock removed from inventory.", reference: "ADJ-0010", timestamp: "2026-08-24T16:20:00.000Z" },
+  ],
+  marigondon: [
+    { id: "HIS-MAR-001", itemId: "mar-cooking-oil", change: "1,200 → 2,376 ml", variance: 1176, user: { id: "owner-1", name: "Alex Rivera", role: "OWNER" }, type: "Restock", reason: "Monthly bulk restock.", reference: "RST-0006", timestamp: "2026-08-25T11:45:00.000Z" },
+  ]
+};
+
+function readHistoryState() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY));
+    if (stored?.babag && stored?.marigondon) return stored;
+  } catch { /* ignore error */ }
+  const history = structuredClone(initialHistoryByBranch);
+  localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(history));
+  return history;
+}
+
+function persistHistoryState() { localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(historyByBranch)); }
+
+function logHistory(branchId, itemId, changeStr, variance, userOrRole, type, reason, reference) {
+  if (!historyByBranch[branchId]) return;
+  const user = typeof userOrRole === "string" 
+    ? { id: "sys", name: userOrRole === "OWNER" ? "Owner/Manager" : "Staff Member", role: userOrRole }
+    : (userOrRole || { id: "sys", name: "System", role: "SYSTEM" });
+  historyByBranch[branchId].unshift({
+    id: `HIS-${branchId === 'babag' ? 'BAB' : 'MAR'}-${Date.now().toString().slice(-6)}`,
+    itemId,
+    change: changeStr,
+    variance: variance || 0,
+    user,
+    type,
+    reason: reason || "",
+    reference: reference || null,
+    timestamp: new Date().toISOString()
+  });
+  persistHistoryState();
+}
+
 let inventoryByBranch = readInventoryState();
+let historyByBranch = readHistoryState();
 const recipeOverrides = {};
 const ownerOnly = new Set(["OWNER"]);
 const adjustmentRoles = new Set(["OWNER", "STAFF"]);
@@ -67,6 +116,14 @@ export async function getInventory(branchId) {
   return structuredClone(getBranchInventory(branchId).map(withDerivedStatus));
 }
 
+export async function getInventoryHistory(branchId, itemId) {
+  return structuredClone(historyByBranch[branchId]?.filter(h => h.itemId === itemId) || []);
+}
+
+export async function getAllBranchHistory(branchId) {
+  return structuredClone(historyByBranch[branchId] || []);
+}
+
 export async function getInventoryItem(branchId, itemId) {
   const item = getBranchInventory(branchId).find((entry) => entry.id === itemId);
   if (!item) throw new Error("Inventory item was not found for this branch.");
@@ -85,6 +142,7 @@ export async function createInventoryItem(branchId, item, { actorRole } = {}) {
   const newItem = { ...item, id: item.id ?? `${branchId}-inventory-${inventory.length + 1}`, branchId, currentQuantity: Number(item.currentQuantity ?? 0), lowStockThreshold: Number(item.lowStockThreshold), targetStockLevel: Number(item.targetStockLevel), active: item.active ?? true, lastUpdated: new Date().toISOString() };
   inventory.push(newItem);
   persistInventoryState();
+  logHistory(branchId, newItem.id, `Created item with initial stock of ${newItem.currentQuantity} ${newItem.unit}`, 0, actorRole, "Creation");
   return structuredClone(withDerivedStatus(newItem));
 }
 
@@ -98,6 +156,15 @@ export async function updateInventoryItem(branchId, itemId, updates, { actorRole
   validateThresholds(next.lowStockThreshold, next.targetStockLevel);
   inventory[index] = next;
   persistInventoryState();
+  
+  if (updates.active === false) {
+    logHistory(branchId, itemId, "Deactivated item", 0, actorRole, "Status Change");
+  } else if (updates.lowStockThreshold !== undefined || updates.targetStockLevel !== undefined) {
+    logHistory(branchId, itemId, "Updated thresholds", 0, actorRole, "Configuration");
+  } else {
+    logHistory(branchId, itemId, "Edited item details", 0, actorRole, "Edit");
+  }
+
   return structuredClone(withDerivedStatus(next));
 }
 
@@ -105,17 +172,35 @@ export async function deleteInventoryItem(branchId, itemId, { actorRole } = {}) 
   return updateInventoryItem(branchId, itemId, { active: false }, { actorRole });
 }
 
-export async function adjustStock(branchId, itemId, adjustment, { actorRole } = {}) {
-  assertRole(actorRole, adjustmentRoles);
+export async function adjustStock(branchId, itemId, adjustment, { actorRole, user, type, reference } = {}) {
+  assertRole(actorRole || user?.role, adjustmentRoles);
   const item = getBranchInventory(branchId).find((entry) => entry.id === itemId);
   if (!item) throw new Error("Inventory item was not found for this branch.");
   const amount = Number(adjustment.amount);
   if (!Number.isFinite(amount) || amount < 0) throw new Error("Adjustment amount must be zero or greater.");
   if (!["ADD", "REMOVE", "SET"].includes(adjustment.type)) throw new Error("Adjustment type must be ADD, REMOVE, or SET.");
   if (adjustment.type === "REMOVE" && amount > item.currentQuantity) throw new Error("Cannot remove more stock than is currently available.");
+  
+  const oldQuantity = item.currentQuantity;
   item.currentQuantity = adjustment.type === "ADD" ? item.currentQuantity + amount : adjustment.type === "REMOVE" ? item.currentQuantity - amount : amount;
   item.lastUpdated = new Date().toISOString();
   persistInventoryState();
+  
+  const diff = item.currentQuantity - oldQuantity;
+  const sign = diff > 0 ? "+" : diff < 0 ? "" : "";
+  if (diff !== 0 || type === "Reconciliation") {
+    logHistory(
+      branchId, 
+      itemId, 
+      `${sign}${diff} ${item.unit}`, 
+      diff, 
+      user || actorRole, 
+      type || "Stock Adjustment", 
+      adjustment.reason || "Manual stock adjustment", 
+      reference
+    );
+  }
+
   return structuredClone(withDerivedStatus(item));
 }
 
