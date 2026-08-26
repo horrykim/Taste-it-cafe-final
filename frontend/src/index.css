@@ -1,5 +1,4 @@
 @import "tailwindcss";
-
 @theme {
   --color-taste-teal: #7CE1DB;
   --color-taste-teal-strong: #63cbc5;
@@ -85,4 +84,37 @@ select {
 
 #root {
   min-height: 100vh;
+}
+
+.dashboard-stat-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr));
+}
+
+.dashboard-sales-stats-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+}
+
+.dashboard-quick-actions-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8rem), 1fr));
+}
+
+.dashboard-main-grid {
+  grid-template-columns: 1fr;
+}
+
+.dashboard-column {
+  min-width: 0;
+}
+
+@media (min-width: 1280px) {
+  .dashboard-main-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: auto auto;
+  }
+
+  .dashboard-column {
+    display: grid;
+    grid-row: span 2;
+    grid-template-rows: subgrid;
+  }
 }

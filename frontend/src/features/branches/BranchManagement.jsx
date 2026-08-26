@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Clock3, Edit3, Eye, MapPin, Phone, Plus, Power } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useBranch } from "../../context/BranchContext";
-import { Alert, Badge, Button, ConfirmDialog, ContentCard, EmptyState, ErrorState, FormField, Input, LoadingState, Modal, SearchInput, Select, StatusBadge, Textarea, Toast } from "../../components/ui";
+import { Alert, Button, ConfirmDialog, ContentCard, EmptyState, ErrorState, FormField, Input, LoadingState, Modal, SearchInput, Select, StatusBadge, Textarea, Toast } from "../../components/ui";
 import { FilterBar, PageHeader, SectionHeader } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
 import { getBranches, saveBranch, setBranchStatus } from "../../services/mock/mockBranchService";
@@ -45,15 +45,36 @@ export default function BranchManagement() {
   const [details, setDetails] = useState(null);
   const [pendingStatus, setPendingStatus] = useState(null);
   const [toast, setToast] = useState({ open: false, message: "", variant: "success" });
-  const load = useCallback(async () => { setLoading(true); try { const data = await getBranches({ actorRole: currentUser.role }); setBranches(data); setError(""); } catch (loadError) { setError(loadError.message); } finally { setLoading(false); } }, [currentUser.role]);
-  useEffect(() => { load(); }, [load]);
+  const loadBranches = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await getBranches({ actorRole: currentUser.role });
+      setBranches(data);
+      setError("");
+    } catch (loadError) {
+      setError(loadError.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser.role]);
+  useEffect(() => {
+    let isMounted = true;
+    const request = async () => {
+      if (!isMounted) return;
+      await loadBranches();
+    };
+    void request();
+    return () => {
+      isMounted = false;
+    };
+  }, [loadBranches]);
   const filtered = useMemo(() => branches.filter((branch) => { const term = search.toLowerCase().trim(); return (!term || `${branch.name} ${branch.code} ${branch.address} ${branch.managerName}`.toLowerCase().includes(term)) && (status === "ALL" || branch.status === status); }), [branches, search, status]);
   const notify = (message, variant = "success") => setToast({ open: true, message, variant });
-  const afterSave = async (saved) => { setFormOpen(false); setFormBranch(null); await load(); refreshBranches(); notify(`${saved.name} ${saved.id === formBranch?.id ? "updated" : "added"} successfully.`); };
+  const afterSave = async (saved) => { setFormOpen(false); setFormBranch(null); await loadBranches(); refreshBranches(); notify(`${saved.name} ${saved.id === formBranch?.id ? "updated" : "added"} successfully.`); };
   const openStatus = (branch) => { if (branch.status === "ACTIVE" && branch.id === currentBranch?.id) return notify("Switch to another active branch before deactivating the current workspace.", "warning"); if (branch.status === "ACTIVE" && branches.filter((entry) => entry.status === "ACTIVE").length <= 1) return notify("At least one active branch must remain.", "warning"); setPendingStatus(branch); };
-  const changeStatus = async () => { try { const nextStatus = pendingStatus.status === "ACTIVE" ? "INACTIVE" : "ACTIVE"; await setBranchStatus(pendingStatus.id, nextStatus, { actorRole: currentUser.role }); setPendingStatus(null); await load(); refreshBranches(); notify(`${pendingStatus.name} is now ${nextStatus === "ACTIVE" ? "active" : "inactive"}.`); } catch (statusError) { setPendingStatus(null); notify(statusError.message, "danger"); } };
+  const changeStatus = async () => { try { const nextStatus = pendingStatus.status === "ACTIVE" ? "INACTIVE" : "ACTIVE"; await setBranchStatus(pendingStatus.id, nextStatus, { actorRole: currentUser.role }); setPendingStatus(null); await loadBranches(); refreshBranches(); notify(`${pendingStatus.name} is now ${nextStatus === "ACTIVE" ? "active" : "inactive"}.`); } catch (statusError) { setPendingStatus(null); notify(statusError.message, "danger"); } };
   const hasFilters = search || status !== "ALL";
   if (loading) return <PageContainer><LoadingState label="Loading branches" /></PageContainer>;
-  if (error) return <PageContainer><ErrorState title="Branches unavailable" description={error} action={<Button onClick={load}>Try again</Button>} /></PageContainer>;
+  if (error) return <PageContainer><ErrorState title="Branches unavailable" description={error} action={<Button onClick={loadBranches}>Try again</Button>} /></PageContainer>;
   return <PageContainer><PageHeader title="Branch Management" description="Manage Taste It's operating branches and their availability." actions={<Button onClick={() => { setFormBranch(null); setFormOpen(true); }}><Plus size={17} />Add branch</Button>} /><FilterBar className="mt-7"><SearchInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search branches" aria-label="Search branches" className="sm:max-w-sm" /><Select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter branch status" className="sm:max-w-44"><option value="ALL">All statuses</option><option value="ACTIVE">Active</option><option value="INACTIVE">Inactive</option></Select>{hasFilters && <Button variant="ghost" size="sm" onClick={() => { setSearch(""); setStatus("ALL"); }}>Clear filters</Button>}</FilterBar><ContentCard className="mt-7"><SectionHeader title="Operating branches" description={`${filtered.length} branch${filtered.length === 1 ? "" : "es"} in view.`} />{filtered.length ? <div className="mt-5 grid gap-4 lg:grid-cols-2">{filtered.map((branch) => <BranchCard key={branch.id} branch={branch} onView={setDetails} onEdit={(item) => { setFormBranch(item); setFormOpen(true); }} onStatus={openStatus} />)}</div> : <div className="mt-5"><EmptyState title="No branches found" description={hasFilters ? "Try adjusting your search or filters." : "Add an operating branch to get started."} action={!hasFilters && <Button onClick={() => setFormOpen(true)}><Plus size={17} />Add branch</Button>} /></div>}</ContentCard><BranchDetails branch={details} onClose={() => setDetails(null)} />{formOpen && <BranchForm branch={formBranch} actorRole={currentUser.role} onClose={() => { setFormOpen(false); setFormBranch(null); }} onSaved={afterSave} />}<ConfirmDialog open={Boolean(pendingStatus)} onClose={() => setPendingStatus(null)} onConfirm={changeStatus} danger={pendingStatus?.status === "ACTIVE"} confirmLabel={pendingStatus?.status === "ACTIVE" ? "Deactivate branch" : "Activate branch"} title={pendingStatus?.status === "ACTIVE" ? "Deactivate branch?" : "Activate branch?"} description={pendingStatus?.status === "ACTIVE" ? `${pendingStatus?.name} will remain in Branch Management but will no longer be available for normal branch selection.` : `${pendingStatus?.name} will become available for branch selection and operations.`} /><Toast open={toast.open} variant={toast.variant} onClose={() => setToast((current) => ({ ...current, open: false }))}>{toast.message}</Toast></PageContainer>;
 }

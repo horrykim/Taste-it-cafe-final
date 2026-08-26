@@ -13,7 +13,11 @@ let staffState = readState();
 function persist() { localStorage.setItem(STORAGE_KEY, JSON.stringify(staffState)); }
 function assertOwner(actorRole) { if (!OWNER_ROLES.has(actorRole)) throw new Error("Only the Owner can manage Staff accounts."); }
 function activeBranches() { return new Map(getBranchRecords().filter((branch) => branch.status === "ACTIVE").map((branch) => [branch.id, branch])); }
-function publicRecord(record) { const { password, ...safeRecord } = record; return safeRecord; }
+function publicRecord(record) {
+  const safeRecord = { ...record };
+  delete safeRecord.password;
+  return safeRecord;
+}
 function validate(record, existingId = null) {
   if (!String(record.name ?? "").trim()) throw new Error("Full name is required.");
   const email = String(record.email ?? "").trim().toLowerCase();

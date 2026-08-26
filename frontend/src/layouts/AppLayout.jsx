@@ -3,12 +3,14 @@ import { Outlet } from "react-router-dom";
 
 import Sidebar from "../components/layout/Sidebar";
 import Topbar from "../components/layout/Topbar";
+import { OverlayProvider } from "../context/OverlayContext";
 
 function AppLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   return (
-    <div className="flex min-h-screen bg-taste-background">
+    <OverlayProvider>
+      <div className="flex min-h-screen bg-taste-background">
       <Sidebar
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
@@ -23,7 +25,8 @@ function AppLayout() {
           <Outlet />
         </main>
       </div>
-    </div>
+      </div>
+    </OverlayProvider>
   );
 }
 

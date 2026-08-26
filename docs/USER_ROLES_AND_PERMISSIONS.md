@@ -43,6 +43,12 @@ Allowed:
 
 - Owner Dashboard
 
+## POS
+
+Allowed:
+
+- Access the branch-scoped POS workspace.
+
 ## Menu
 
 Allowed:
@@ -64,6 +70,7 @@ Allowed:
 - View stock status
 - View inventory history
 - Perform inventory-related authorized actions
+- Configure item-specific low-stock thresholds and target stock levels
 
 ## Reconciliation
 
@@ -87,7 +94,7 @@ Allowed:
 - Filter sales by date
 - View transaction details
 
-The formal user requirements state that Owner/Manager does not perform POS/cashiering transactions.
+The finalized navigation model allows Owner/Manager access to the branch-scoped POS route alongside Staff.
 
 ## Staff
 
@@ -176,6 +183,11 @@ Allowed:
 - View inventory list
 - View item details
 - View Normal/Low Stock/Out of Stock status
+- View item thresholds and target stock levels
+
+Not allowed:
+
+- Change low-stock thresholds or target stock levels.
 
 ## Reconciliation
 
@@ -236,7 +248,7 @@ Not allowed:
 | Deactivate branch | Yes | No |
 | Owner Dashboard | Yes | No |
 | Staff Dashboard | No | Yes |
-| POS transaction | No | Yes |
+| POS transaction | Yes | Yes |
 | Own sales history | Optional/Not required | Yes |
 | View sales transactions | Yes | Own history only |
 | Menu view/details | Yes | Yes |
@@ -267,5 +279,7 @@ Navigation must be role-aware.
 Owner should see Owner-relevant modules.
 
 Staff should see Staff-relevant operational modules.
+
+Inventory is an expandable navigation group for both roles, containing Inventory and Inventory Reconciliation. AI Business Reports is a standalone Owner-only module and is not nested under Reports.
 
 Do not merely hide a button while leaving a protected route accessible. Route-level access control must also exist.

@@ -18,6 +18,14 @@ Owner can switch branches.
 
 Staff sees their assigned branch.
 
+### Visual contract
+
+- Use the canonical tokens, Poppins weights, component geometry, and responsive rules in [`UI_DESIGN_SYSTEM.md`](UI_DESIGN_SYSTEM.md).
+- The reference shell is an approximately `1180 × 820px` composition with a `240px` desktop sidebar and a header near `70px`; these are reference dimensions, not runtime minimums.
+- Use `#FAF6F6` for the page canvas, white surfaces, `#EBEBEB` dividers, `#051945` headings, and `#062B56` icon strokes.
+- Preserve readable text, visible focus states, and non-color status labels/icons at every viewport.
+- Cards and controls must reflow without overlap or page-level horizontal overflow. Tables may scroll within their own container on small screens.
+
 ---
 
 # 2. Login

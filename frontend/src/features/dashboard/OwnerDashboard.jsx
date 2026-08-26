@@ -1,30 +1,95 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertTriangle,
   BarChart3,
   BriefcaseBusiness,
-  CalendarDays,
-  CircleX,
   ClipboardList,
   CreditCard,
   Package,
   PackageCheck,
   ShoppingCart,
   Sparkles,
-  Store,
   TriangleAlert,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
-import { Button, Card, FormField, Input, Modal, Select, Toast } from "../../components/ui";
+import { Button, Card, ContextualPopover, FormField, Input, Modal, Select, Toast } from "../../components/ui";
 import { useAuth } from "../../context/AuthContext";
 import { useBranch } from "../../context/BranchContext";
 import MenuItemModal from "../menu/components/MenuItemModal";
 import { getMockDashboardData } from "../../services/mock/mockDashboardService";
 import { getInventory } from "../../services/mock/mockInventoryService";
 import { getMockMenuData, saveMenuItem } from "../../services/mock/mockMenuService";
+import { getPosTransactions } from "../../services/mock/mockPosService";
+import { useOverlay } from "../../context/useOverlay";
 import SalesTrendChart from "./components/SalesTrendChart";
 
 const formatCurrency = (value) => `₱${value.toLocaleString("en-PH", { minimumFractionDigits: 2 })}`;
+const periodLabels = { today: "Today", yesterday: "Yesterday", thisWeek: "This Week", lastWeek: "Last Week", thisMonth: "This Month", lastMonth: "Last Month", thisYear: "This Year" };
+const periodOptions = Object.entries(periodLabels);
+const dayLabels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+const hourLabels = ["8 AM", "10 AM", "12 PM", "2 PM", "4 PM", "6 PM", "8 PM"];
+const startOfDay = (date) => new Date(date.getFullYear(), date.getMonth(), date.getDate());
+const startOfWeek = (date) => { const result = startOfDay(date); result.setDate(result.getDate() - ((result.getDay() + 6) % 7)); return result; };
+const addDays = (date, days) => { const result = new Date(date); result.setDate(result.getDate() + days); return result; };
+const startOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1);
+const startOfYear = (date) => new Date(date.getFullYear(), 0, 1);
+
+function transactionAmount(transaction) { return transaction.status === "COMPLETED" ? Number(transaction.total) || 0 : 0; }
+
+function getRange(period, referenceDate) {
+  const today = startOfDay(referenceDate);
+  if (period === "today") return [today, addDays(today, 1)];
+  if (period === "yesterday") return [addDays(today, -1), today];
+  if (period === "thisWeek") { const start = startOfWeek(today); return [start, addDays(start, 7)]; }
+  if (period === "lastWeek") { const start = addDays(startOfWeek(today), -7); return [start, addDays(start, 7)]; }
+  if (period === "thisMonth") { const start = startOfMonth(today); return [start, new Date(today.getFullYear(), today.getMonth() + 1, 1)]; }
+  if (period === "lastMonth") { const end = startOfMonth(today); const start = new Date(today.getFullYear(), today.getMonth() - 1, 1); return [start, end]; }
+  return [startOfYear(today), new Date(today.getFullYear() + 1, 0, 1)];
+}
+
+function getSalesView(transactions, dashboardSales, period, referenceDate = new Date(), useFallback = true) {
+  const sourceSales = dashboardSales ?? { weekly: [], monthly: [] };
+  const [rangeStart, rangeEnd] = getRange(period, referenceDate);
+  const validTransactions = transactions.filter((transaction) => transactionAmount(transaction) > 0);
+  const inRange = validTransactions.filter((transaction) => { const createdAt = new Date(transaction.createdAt); return createdAt >= rangeStart && createdAt < rangeEnd; });
+  let points;
+  let unit;
+  if (period === "today" || period === "yesterday") {
+    points = hourLabels.map((label, index) => ({ label, value: inRange.filter((transaction) => { const hour = new Date(transaction.createdAt).getHours(); const bucketStart = 8 + index * 2; return index === 0 ? hour < bucketStart + 2 : index === hourLabels.length - 1 ? hour >= bucketStart : hour >= bucketStart && hour < bucketStart + 2; }).reduce((total, transaction) => total + transactionAmount(transaction), 0) }));
+    unit = "hour";
+  } else if (period === "thisWeek" || period === "lastWeek") {
+    points = dayLabels.map((label, index) => ({ label, value: inRange.filter((transaction) => new Date(transaction.createdAt).getDay() === (index + 1) % 7).reduce((total, transaction) => total + transactionAmount(transaction), 0) }));
+    unit = "day";
+    if (useFallback && !inRange.length && period === "thisWeek") points = sourceSales.weekly.map((point) => ({ ...point }));
+  } else if (period === "thisMonth" || period === "lastMonth") {
+    const days = Math.round((rangeEnd - rangeStart) / 86400000);
+    points = Array.from({ length: days }, (_, index) => { const day = index + 1; return { label: String(day), value: inRange.filter((transaction) => new Date(transaction.createdAt).getDate() === day).reduce((total, transaction) => total + transactionAmount(transaction), 0) }; });
+    unit = "day";
+  } else {
+    points = Array.from({ length: 12 }, (_, index) => ({ label: new Intl.DateTimeFormat("en", { month: "short" }).format(new Date(referenceDate.getFullYear(), index, 1)), value: inRange.filter((transaction) => new Date(transaction.createdAt).getMonth() === index).reduce((total, transaction) => total + transactionAmount(transaction), 0) }));
+    unit = "month";
+    if (useFallback && !inRange.length) points = points.map((point, index) => ({ ...point, value: sourceSales.monthly[index]?.value ?? 0 }));
+  }
+  if (!points.length) points = [{ label: "No data", value: 0 }];
+  const total = points.reduce((sum, point) => sum + point.value, 0);
+  const best = points.reduce((current, point) => point.value > current.value ? point : current, { label: "No sales", value: 0 });
+  const average = points.length ? total / points.length : 0;
+  return { points, total, best, average, unit };
+}
+
+function getComparison(transactions, dashboardSales, period, referenceDate) {
+  if (!Object.prototype.hasOwnProperty.call(periodLabels, period)) return null;
+  const previousPeriod = period;
+  const current = getSalesView(transactions, dashboardSales, period, referenceDate).total;
+  const previousReferenceDate = new Date(referenceDate);
+  if (period === "today" || period === "yesterday") previousReferenceDate.setDate(previousReferenceDate.getDate() - 1);
+  if (period === "thisWeek" || period === "lastWeek") previousReferenceDate.setDate(previousReferenceDate.getDate() - 7);
+  if (period === "thisMonth" || period === "lastMonth") previousReferenceDate.setMonth(previousReferenceDate.getMonth() - 1);
+  if (period === "thisYear") previousReferenceDate.setFullYear(previousReferenceDate.getFullYear() - 1);
+  const previous = getSalesView(transactions, dashboardSales, previousPeriod, previousReferenceDate, false).total;
+  if (previous === 0) return current === 0 ? "0.0% vs previous period" : "New sales vs previous period";
+  return `${((current - previous) / previous * 100).toFixed(1)}% vs previous period`;
+}
 
 const getInitialRecipeRow = () => ({ ingredientId: "", quantity: "", unit: "" });
 
@@ -33,6 +98,7 @@ function OwnerDashboard() {
   const { currentUser } = useAuth();
   const { currentBranch } = useBranch();
   const [dashboard, setDashboard] = useState(null);
+  const [salesTransactions, setSalesTransactions] = useState([]);
   const [menuData, setMenuData] = useState(null);
   const [inventoryItems, setInventoryItems] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -40,24 +106,31 @@ function OwnerDashboard() {
   const [toast, setToast] = useState({ open: false, message: "", variant: "success" });
   const [menuModalOpen, setMenuModalOpen] = useState(false);
   const [recipeModalOpen, setRecipeModalOpen] = useState(false);
+  const [salesPeriod, setSalesPeriod] = useState("thisWeek");
   const [alertsModalOpen, setAlertsModalOpen] = useState(false);
   const [aiSummaryOpen, setAiSummaryOpen] = useState(false);
   const [recipeMenuId, setRecipeMenuId] = useState("");
   const [recipeRows, setRecipeRows] = useState([getInitialRecipeRow()]);
+  const { activeOverlay, setActiveOverlay } = useOverlay();
+  const salesPeriodTriggerRef = useRef(null);
+  const salesView = useMemo(() => getSalesView(salesTransactions, dashboard?.sales, salesPeriod), [salesTransactions, dashboard?.sales, salesPeriod]);
+  const comparison = useMemo(() => getComparison(salesTransactions, dashboard?.sales, salesPeriod, new Date()), [salesTransactions, dashboard?.sales, salesPeriod]);
 
   const notify = (message, variant = "success") => setToast({ open: true, message, variant });
 
   const loadDashboardData = async () => {
     if (!currentBranch?.id) return;
-    const [dashboardData, menuDataResult, inventoryData] = await Promise.all([
+    const [dashboardData, menuDataResult, inventoryData, transactionData] = await Promise.all([
       getMockDashboardData(currentBranch.id),
       getMockMenuData(currentBranch.id),
       getInventory(currentBranch.id),
+      getPosTransactions(currentBranch.id, currentUser),
     ]);
 
     setDashboard(dashboardData);
     setMenuData(menuDataResult);
     setInventoryItems(inventoryData);
+    setSalesTransactions(transactionData);
     setError("");
   };
 
@@ -74,20 +147,23 @@ function OwnerDashboard() {
       }
     };
 
-    load();
+    void load();
     return () => { isCurrent = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentBranch?.id]);
 
   const refreshData = async () => {
     if (!currentBranch?.id) return;
-    const [dashboardData, menuDataResult, inventoryData] = await Promise.all([
+    const [dashboardData, menuDataResult, inventoryData, transactionData] = await Promise.all([
       getMockDashboardData(currentBranch.id),
       getMockMenuData(currentBranch.id),
       getInventory(currentBranch.id),
+      getPosTransactions(currentBranch.id, currentUser),
     ]);
     setDashboard(dashboardData);
     setMenuData(menuDataResult);
     setInventoryItems(inventoryData);
+    setSalesTransactions(transactionData);
   };
 
   const handleMenuSave = async (form) => {
@@ -202,181 +278,179 @@ function OwnerDashboard() {
   }
 
   const { summary, recentTransactions, inventoryAlerts } = dashboard;
+  const { points: salesPoints, total: salesTotal, best: bestSalesDay, average: averageSales, unit: salesUnit } = salesView;
+  const totalLabel = salesPeriod === "today" || salesPeriod === "yesterday" ? "Total Sales" : salesPeriod === "thisYear" ? "Yearly Sales" : salesPeriod === "thisMonth" || salesPeriod === "lastMonth" ? "Monthly Sales" : "Weekly Sales";
   const activeAlerts = inventoryItems.filter((item) => item.active && item.status !== "normal");
 
   return (
     <div className="min-h-screen bg-[#f5f4f0] p-4 sm:p-6 xl:p-7">
       <div className="space-y-6">
-        <header className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <h1 className="text-[clamp(2rem,3vw,3rem)] font-black leading-none tracking-[-0.06em] text-slate-900">
-            Welcome Back, Owner!
-          </h1>
-
-          <div className="flex flex-wrap items-center gap-3 self-start xl:self-auto">
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-              <CalendarDays size={16} className="text-slate-500" />
-              <span className="text-sm font-medium text-slate-700">May 20, 2025</span>
-            </div>
-
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
-              <Store size={16} className="text-slate-500" />
-              <span className="text-sm font-medium text-slate-700">{currentBranch?.name || "Babag Branch"}</span>
-            </div>
-          </div>
-        </header>
-
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <Card className="p-4 sm:p-5">
-            <div className="flex items-start justify-between gap-4">
+        <div className="dashboard-stat-grid grid min-w-0 gap-4">
+          <Card className="h-full min-w-0 p-4 sm:p-5">
+            <div className="flex h-full items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-500">Total Sales Today</p>
-                <p className="mt-2 text-[clamp(1.8rem,2vw,2.4rem)] font-bold tracking-tight text-slate-900">{formatCurrency(summary.todaysSales)}</p>
-                <p className="mt-2 text-xs font-medium text-emerald-600">+12.5% vs yesterday</p>
+                <p className="text-xs font-medium leading-5 text-slate-500 sm:text-sm">Total Sales Today</p>
+                <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-[2rem]">{formatCurrency(summary.todaysSales)}</p>
+                <p className="mt-1 text-[11px] font-medium text-emerald-600 sm:text-xs">+12.5% vs yesterday</p>
               </div>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f6dfe8] text-[#d54085]">
-                <ShoppingCart size={20} />
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f6dfe8] text-[#d54085]">
+                <ShoppingCart size={18} />
               </span>
             </div>
           </Card>
 
-          <Card className="p-4 sm:p-5">
-            <div className="flex items-start justify-between gap-4">
+          <Card className="h-full min-w-0 p-4 sm:p-5">
+            <div className="flex h-full items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-500">Total Items Sold</p>
-                <p className="mt-2 text-[clamp(1.8rem,2vw,2.4rem)] font-bold tracking-tight text-slate-900">{summary.todaysTransactions}</p>
-                <p className="mt-2 text-xs font-medium text-emerald-600">+8.7% vs yesterday</p>
+                <p className="text-xs font-medium leading-5 text-slate-500 sm:text-sm">Total Items Sold</p>
+                <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-[2rem]">{summary.todaysTransactions}</p>
+                <p className="mt-1 text-[11px] font-medium text-emerald-600 sm:text-xs">+8.7% vs yesterday</p>
               </div>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#d9f3ef] text-[#179a8d]">
-                <PackageCheck size={20} />
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#d9f3ef] text-[#179a8d]">
+                <PackageCheck size={18} />
               </span>
             </div>
           </Card>
 
-          <Card className="p-4 sm:p-5">
-            <div className="flex items-start justify-between gap-4">
+          <Card className="h-full min-w-0 p-4 sm:p-5">
+            <div className="flex h-full items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-500">Low Stock</p>
-                <p className="mt-2 text-[clamp(1.8rem,2vw,2.4rem)] font-bold tracking-tight text-slate-900">{summary.lowStockItems}</p>
-                <p className="mt-2 text-xs font-medium text-slate-500">In 8 categories</p>
+                <p className="text-xs font-medium leading-5 text-slate-500 sm:text-sm">Inventory Items</p>
+                <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-[2rem]">{summary.lowStockItems + summary.outOfStockItems + 12}</p>
+                <p className="mt-1 text-[11px] font-medium text-slate-500 sm:text-xs">Current branch stock</p>
               </div>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#d9f3ef] text-[#179a8d]">
-                <Package size={20} />
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#d9f3ef] text-[#179a8d]">
+                <Package size={18} />
               </span>
             </div>
           </Card>
 
-          <Card className="p-4 sm:p-5">
-            <div className="flex items-start justify-between gap-4">
+          <Card className="h-full min-w-0 p-4 sm:p-5">
+            <div className="flex h-full items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-sm font-medium text-slate-500">Out of Stock</p>
-                <p className="mt-2 text-[clamp(1.8rem,2vw,2.4rem)] font-bold tracking-tight text-slate-900">{summary.outOfStockItems}</p>
-                <p className="mt-2 text-xs font-medium text-rose-500">Needs attention</p>
+                <p className="text-xs font-medium leading-5 text-slate-500 sm:text-sm">Low Stock</p>
+                <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900 sm:text-[2rem]">{summary.lowStockItems}</p>
+                <p className="mt-1 text-[11px] font-medium text-amber-600 sm:text-xs">Needs review</p>
               </div>
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#f8d7d7] text-[#d91f45]">
-                <CircleX size={20} />
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#f9e7d2] text-[#d17b2d]">
+                <TriangleAlert size={18} />
               </span>
             </div>
           </Card>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,1fr)]">
-          <Card className="p-4 sm:p-5">
-            <div className="mb-5 flex items-center justify-between gap-3">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Sales Overview</h2>
-              <button type="button" className="rounded-xl border border-slate-200 bg-[#f7f4f2] px-3 py-2 text-sm font-medium text-slate-700">
-                This Week
-              </button>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white p-2 sm:p-3">
-              <SalesTrendChart sales={dashboard.sales} />
-            </div>
-
-            <div className="mt-5 grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl border border-slate-200 bg-[#f7f7f7] p-4">
-                <p className="text-sm text-slate-500">Weekly Sales</p>
-                <p className="mt-2 text-xl font-bold text-slate-900">₱30,850.00</p>
-                <p className="mt-1 text-xs font-medium text-emerald-600">+15.3% vs last week</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-[#f7f7f7] p-4">
-                <p className="text-sm text-slate-500">Best Day</p>
-                <p className="mt-2 text-xl font-bold text-slate-900">Saturday</p>
-                <p className="mt-1 text-xs font-medium text-slate-600">₱12,450.00</p>
-              </div>
-              <div className="rounded-2xl border border-slate-200 bg-[#f7f7f7] p-4">
-                <p className="text-sm text-slate-500">Average Daily Sales</p>
-                <p className="mt-2 text-xl font-bold text-slate-900">₱21,121.43</p>
-                <p className="mt-1 text-xs font-medium text-slate-600">Across 7 days</p>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-4 sm:p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Recent Alerts</h2>
-              <button type="button" className="text-sm font-semibold text-[#d54085] hover:text-[#be3268]">
-                View All
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              {inventoryAlerts.map((item) => {
-                const isOut = item.status === "out-of-stock";
-                const statusText = isOut ? "Out of stock" : "Low stock";
-
-                return (
-                  <div key={item.id} className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-[#f9f7f6] p-3">
-                    <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${isOut ? "bg-[#f8d7d7] text-[#d91f45]" : "bg-[#f9e7d2] text-[#d17b2d]"}`}>
-                      <TriangleAlert size={18} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-base font-semibold text-slate-900">{item.name}</p>
-                      <p className="text-sm text-slate-500">{statusText}</p>
-                    </div>
-                    <span className="text-xs font-medium text-slate-400">{item.time || "Today"}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-        </div>
-
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
-          <Card className="p-4 sm:p-5">
-            <h2 className="text-2xl font-bold tracking-tight text-slate-900">Quick Actions</h2>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              {quickActions.map(({ label, icon: Icon, action, accent }) => (
-                <button key={label} type="button" onClick={action} className="group rounded-2xl border border-slate-200 bg-[#faf7f4] p-3 text-center transition hover:-translate-y-0.5 hover:shadow-sm">
-                  <div className={`mx-auto flex h-14 w-14 items-center justify-center rounded-2xl ${accent}`}>
-                    <Icon size={24} />
-                  </div>
-                  <p className="mt-3 text-sm font-medium text-slate-700">{label}</p>
+        <div className="dashboard-main-grid grid min-w-0 gap-6">
+          <div className="dashboard-column grid min-w-0 gap-6">
+            <Card className="flex h-full flex-col p-4 sm:p-5">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 sm:mb-5">
+                <h2 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Sales Overview</h2>
+                <button ref={salesPeriodTriggerRef} type="button" onClick={() => setActiveOverlay((current) => current === "salesPeriod" ? null : "salesPeriod")} className="flex items-center gap-2 rounded-xl border border-taste-border bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-taste-purple/50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-taste-purple sm:px-3 sm:py-2 sm:text-sm" aria-expanded={activeOverlay === "salesPeriod"} aria-label={`Sales period: ${periodLabels[salesPeriod]}`}>
+                  <span>{periodLabels[salesPeriod]}</span><span className="text-xs text-taste-muted" aria-hidden="true">▼</span>
                 </button>
-              ))}
-            </div>
-          </Card>
+              </div>
 
-          <Card className="p-4 sm:p-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
-              <h2 className="text-2xl font-bold tracking-tight text-slate-900">Recent Transactions</h2>
-              <button type="button" className="text-sm font-semibold text-[#d54085] hover:text-[#be3268]">
-                View All
-              </button>
-            </div>
+              <ContextualPopover open={activeOverlay === "salesPeriod"} anchorRef={salesPeriodTriggerRef} onClose={() => setActiveOverlay(null)} width={180}>
+                <div className="space-y-1">{periodOptions.map(([value, label]) => <button key={value} type="button" onClick={() => { setSalesPeriod(value); setActiveOverlay(null); }} className={`flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm transition hover:bg-taste-purple-soft ${salesPeriod === value ? "bg-taste-purple-soft font-semibold text-taste-text" : "text-slate-700"}`}><span>{label}</span>{salesPeriod === value && <span aria-hidden="true">✓</span>}</button>)}</div>
+              </ContextualPopover>
 
-            <div className="space-y-3">
-              {recentTransactions.map((transaction) => (
-                <div key={transaction.id} className="grid grid-cols-[minmax(0,1.2fr)_auto_auto] items-center gap-3 rounded-2xl border border-slate-200 bg-[#f9f7f6] p-3 text-sm">
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-slate-900">{transaction.id}</p>
-                    <p className="text-xs text-slate-500">{transaction.time}</p>
-                  </div>
-                  <div className="text-right text-slate-500">{transaction.items}</div>
-                  <div className="text-right font-bold text-slate-900">{formatCurrency(transaction.total)}</div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-2 sm:p-3">
+                <SalesTrendChart sales={{ [salesPeriod]: salesPoints }} period={salesPeriod} periodLabel={periodLabels[salesPeriod]} />
+              </div>
+
+              <div className="dashboard-sales-stats-grid mt-4 grid gap-3 sm:mt-5 sm:gap-4">
+                <div className="rounded-2xl border border-slate-200 bg-[#f7f7f7] p-3 sm:p-4">
+                  <p className="text-xs text-slate-500 sm:text-sm">{totalLabel}</p>
+                  <p className="mt-1 text-lg font-bold text-slate-900 sm:mt-2 sm:text-xl">{formatCurrency(salesTotal)}</p>
+                  <p className="mt-1 text-[11px] font-medium text-emerald-600 sm:text-xs">{comparison ?? "Selected period total"}</p>
                 </div>
-              ))}
-            </div>
-          </Card>
+                <div className="rounded-2xl border border-slate-200 bg-[#f7f7f7] p-3 sm:p-4">
+                  <p className="text-xs text-slate-500 sm:text-sm">Best {salesUnit === "hour" ? "Hour" : salesUnit === "month" ? "Month" : "Day"}</p>
+                  <p className="mt-1 text-lg font-bold text-slate-900 sm:mt-2 sm:text-xl">{bestSalesDay?.label ?? "-"}</p>
+                  <p className="mt-1 text-[11px] font-medium text-slate-600 sm:text-xs">{bestSalesDay ? formatCurrency(bestSalesDay.value) : "-"}</p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-[#f7f7f7] p-3 sm:p-4">
+                  <p className="text-xs text-slate-500 sm:text-sm">Average {salesUnit === "hour" ? "Hourly" : salesUnit === "month" ? "Monthly" : "Daily"} Sales</p>
+                  <p className="mt-1 text-lg font-bold text-slate-900 sm:mt-2 sm:text-xl">{formatCurrency(averageSales)}</p>
+                  <p className="mt-1 text-[11px] font-medium text-slate-600 sm:text-xs">Average per data point</p>
+                </div>
+              </div>
+            </Card>
+
+            <Card className="flex h-full flex-col p-4 sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Quick Actions</h2>
+              </div>
+
+              <div className="dashboard-quick-actions-grid mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+                {quickActions.map(({ label, icon: Icon, action, accent }) => (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={action}
+                    className="group min-w-0 rounded-2xl border border-slate-200 bg-[#faf7f4] p-2.5 text-center transition duration-200 hover:-translate-y-0.5 hover:border-[#d17fb2]/40 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d17fb2]/40 sm:p-3"
+                  >
+                    <div className={`mx-auto flex h-11 w-11 items-center justify-center rounded-2xl ${accent} sm:h-14 sm:w-14`}>
+                      <Icon size={20} className="sm:h-6 sm:w-6" />
+                    </div>
+                    <p className="mt-2 break-words text-xs font-medium leading-4 text-slate-700 sm:mt-3 sm:text-sm">{label}</p>
+                  </button>
+                ))}
+              </div>
+            </Card>
+          </div>
+
+          <div className="dashboard-column grid min-w-0 gap-6">
+            <Card className="flex h-full flex-col p-4 sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Recent Alerts</h2>
+                <button type="button" onClick={() => navigate("/app/inventory?status=alerts")} className="text-sm font-semibold text-[#d54085] hover:text-[#be3268] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d17fb2]/40">
+                  View All
+                </button>
+              </div>
+
+              <div className="space-y-3 overflow-y-auto pr-1">
+                {inventoryAlerts.map((item) => {
+                  const isOut = item.status === "out-of-stock";
+                  const statusText = isOut ? "Out of stock" : "Low stock";
+
+                  return (
+                    <div key={item.id} className="flex min-w-0 items-center gap-2 rounded-2xl border border-slate-200 bg-[#f9f7f6] p-2.5 sm:gap-3 sm:p-3">
+                      <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${isOut ? "bg-[#f8d7d7] text-[#d91f45]" : "bg-[#f9e7d2] text-[#d17b2d]"}`}>
+                        <TriangleAlert size={16} />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-semibold text-slate-900 sm:text-base">{item.name}</p>
+                        <p className="text-xs text-slate-500 sm:text-sm">{statusText}</p>
+                      </div>
+                      <span className="shrink-0 text-xs font-medium text-slate-400">{item.time || "Today"}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+
+            <Card className="flex h-full flex-col p-4 sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <h2 className="text-lg font-bold tracking-tight text-slate-900 sm:text-xl">Recent Transactions</h2>
+                <button type="button" onClick={() => navigate("/app/sales")} className="text-sm font-semibold text-[#d54085] hover:text-[#be3268] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#d17fb2]/40">
+                  View All
+                </button>
+              </div>
+
+              <div className="space-y-3 overflow-y-auto pr-1">
+                {recentTransactions.map((transaction) => (
+                  <div key={transaction.id} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-slate-200 bg-[#f9f7f6] p-2.5 text-xs sm:flex-nowrap sm:p-3 sm:text-sm">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-slate-900">{transaction.id}</p>
+                      <p className="text-xs text-slate-500">{transaction.time}</p>
+                    </div>
+                    <div className="ml-auto shrink-0 text-right text-slate-500">{transaction.items}</div>
+                    <div className="shrink-0 text-right font-bold text-slate-900">{formatCurrency(transaction.total)}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          </div>
         </div>
       </div>
 

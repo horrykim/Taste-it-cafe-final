@@ -44,6 +44,7 @@ Recommended route structure:
 
 ```text
 /dashboard
+/pos
 /menu
 /inventory
 /reconciliation
@@ -68,7 +69,7 @@ The exact final route can be changed if the approved UI establishes another conv
 Recommended:
 
 ```text
-/staff/dashboard
+/dashboard
 /pos
 /menu
 /inventory
@@ -96,9 +97,11 @@ Owner:
 - Dashboard
 - POS
 - Menu Management
-- Inventory
-- Reconciliation
+- Inventory (expandable)
+  - Inventory
+  - Inventory Reconciliation
 - Sales
+- Branch Management
 - Staff Management
 - Reports
 - AI Business Reports
@@ -107,10 +110,13 @@ Staff:
 
 - Dashboard
 - POS
-- Menu
-- Inventory
-- Reconciliation
+- Menu Management
+- Inventory (expandable)
+  - Inventory
+  - Inventory Reconciliation
 - Sales
+
+AI Business Reports is a standalone Owner-only top-level module. It is not nested beneath Reports.
 
 ---
 

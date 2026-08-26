@@ -3,7 +3,6 @@ import { getInventory } from "./mockInventoryService";
 import { getMockMenuData } from "./mockMenuService";
 
 const SALES_STORAGE_KEY = "tasteit_sales";
-const DAY = 86400000;
 const clone = (value) => structuredClone(value);
 const readSales = () => { try { return JSON.parse(localStorage.getItem(SALES_STORAGE_KEY)) ?? []; } catch { return []; } };
 const dateOnly = (value) => { const date = new Date(value); return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime(); };

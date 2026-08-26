@@ -110,21 +110,26 @@ Do not hard-code every menu item to one branch.
 }
 ```
 
-The recipe references inventory ingredients.
+The recipe references branch inventory items. A recipe quantity is consumption per menu item and is not the inventory quantity.
 
 ---
 
-# 7. Ingredient
+# 7. Ingredient / Inventory Item
 
 ```js
 {
   id,
+  branchId,
   name,
   category,
   unit,
-  stock,
-  threshold,
-  branchId
+  currentQuantity,
+  lowStockThreshold,
+  targetStockLevel,
+  costPerUnit,
+  supplier,
+  lastUpdated,
+  active
 }
 ```
 
@@ -135,17 +140,17 @@ Important:
 Example:
 
 ```text
-stock <= 0
+currentQuantity <= 0
 → Out of Stock
 
-stock <= threshold
+currentQuantity <= lowStockThreshold
 → Low Stock
 
-stock > threshold
+currentQuantity > lowStockThreshold
 → Normal
 ```
 
-The exact comparison convention should be kept in one utility so it cannot diverge between screens.
+`targetStockLevel` is a preferred restock level and does not create an additional stock-status range. The exact comparison convention is kept in one utility so it cannot diverge between screens.
 
 ---
 

@@ -7,8 +7,10 @@ import Login from "../pages/Login";
 import PlaceholderPage from "../pages/PlaceholderPage";
 import DesignSystemShowcase from "../pages/DesignSystemShowcase";
 import OwnerDashboard from "../features/dashboard/OwnerDashboard";
+import StaffDashboard from "../features/dashboard/StaffDashboard";
 import MenuManagement from "../features/menu/MenuManagement";
 import InventoryManagement from "../features/inventory/InventoryManagement";
+import InventoryHistory from "../features/inventory/InventoryHistory";
 import Reconciliation from "../features/reconciliation/Reconciliation";
 import POS from "../features/pos/POS";
 import Sales from "../features/sales/Sales";
@@ -34,7 +36,7 @@ function placeholder([title, description], staffCapabilities) {
 
 function DashboardRoute() {
   const { currentUser } = useAuth();
-  return currentUser.role === "OWNER" ? <OwnerDashboard /> : placeholder(["Staff Dashboard", "Your assigned branch workspace will be introduced in the Staff Dashboard phase."]);
+  return currentUser.role === "OWNER" ? <OwnerDashboard /> : <StaffDashboard />;
 }
 
 function AppRoutes() {
@@ -46,6 +48,7 @@ function AppRoutes() {
       <Route element={<ProtectedRoute requireBranchForOwner><AppLayout /></ProtectedRoute>}>
         <Route path="/app/dashboard" element={<DashboardRoute />} />
         <Route path="/app/inventory" element={<InventoryManagement />} />
+        <Route path="/app/inventory/history" element={<ProtectedRoute allowedRoles={["OWNER"]}><InventoryHistory /></ProtectedRoute>} />
         <Route path="/app/reconciliation" element={<Reconciliation />} />
         <Route path="/app/sales" element={<ProtectedRoute allowedRoles={["OWNER", "STAFF"]}><Sales /></ProtectedRoute>} />
         <Route path="/app/pos" element={<ProtectedRoute allowedRoles={["OWNER", "STAFF"]}><POS /></ProtectedRoute>} />

@@ -177,6 +177,16 @@ For each completed screen, verify:
 - Tablet
 - Mobile
 
+### Visual system QA
+
+- Confirm Poppins is used with approved weights `400`, `500`, `600`, `700`, and `800`.
+- Confirm current UI tokens match [`UI_DESIGN_SYSTEM.md`](UI_DESIGN_SYSTEM.md); legacy purple guidance must not be introduced as a current token.
+- Check the reference shell proportions: `240px` desktop sidebar, approximately `70px` header, and responsive `56px/24px` outer gutters.
+- Check card, control, pill, icon-well, and secondary-surface radii against the canonical geometry.
+- Verify success, warning, and danger states have sufficient contrast and include text or icon cues beyond color.
+- Test desktop, tablet, and mobile layouts at normal browser zoom and representative zoom levels such as `80%`, `100%`, and `120%`.
+- Confirm grids reflow without overlapping cards, clipped text, or page-level horizontal overflow.
+
 ---
 
 ## 8. UI Completion Checklist

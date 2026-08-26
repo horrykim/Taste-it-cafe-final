@@ -143,6 +143,7 @@ Owner/Manager can:
 - Add/edit/deactivate branches as approved
 - Switch selected branch
 - View Owner Dashboard
+- Use POS for the selected branch
 - Manage menu items
 - Manage menu categories
 - Manage recipes
@@ -216,12 +217,20 @@ Do not hard-code a single branch.
 
 ## 9. Design System
 
-Brand colors:
+Canonical visual guidance is defined in [`docs/UI_DESIGN_SYSTEM.md`](docs/UI_DESIGN_SYSTEM.md). Use its Poppins typography, token values, shell geometry, radii, and responsive rules.
 
-- Teal: `#7CE1DB`
-- Purple: `#D17FB2`
+Core reference tokens:
 
-Use white/light surfaces with dark readable text.
+- App background: `#FAF6F6`
+- Headings: `#051945`
+- Icon strokes: `#062B56`
+- Primary pink: `#FF77D1`
+- Accent pink: `#FF86DB`
+- Pressed pink: `#B82888`
+- Secondary teal: `#7CE1DB`
+- Surface: `#FFFFFF`
+
+Use semantic success, warning, and danger tokens only for status meaning, with readable labels or icons in addition to color.
 
 Visual direction:
 
@@ -233,8 +242,8 @@ Visual direction:
 - Café-oriented
 - Data-focused
 - Clear visual hierarchy
-- Rounded modern cards
-- Soft borders/shadows
+- Reference card geometry and surface treatments from `docs/UI_DESIGN_SYSTEM.md`
+- Soft borders/shadows with readable contrast
 - Accessible contrast
 
 Do not introduce dark mode unless explicitly requested.

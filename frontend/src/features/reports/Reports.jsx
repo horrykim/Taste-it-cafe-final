@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BarChart3, Boxes, ChartNoAxesCombined, ClipboardList, TrendingUp } from "lucide-react";
 import { Badge, Button, ContentCard, EmptyState, ErrorState, Input, LoadingState, Select, StatCard, StatusBadge, Table, TableBody, TableCell, TableHeader, TableRow } from "../../components/ui";
 import { FilterBar, PageHeader, ResponsiveGrid, SectionHeader } from "../../components/layout/PageHeader";
@@ -28,11 +28,36 @@ function InventoryReport({ data }) { return <><ResponsiveGrid columns="three"><S
 
 export default function Reports() {
   const [period, setPeriod] = useState("MONTH"); const [from, setFrom] = useState(""); const [to, setTo] = useState(""); const [branchId, setBranchId] = useState("ALL"); const [reportType, setReportType] = useState("SALES"); const [data, setData] = useState(null); const [loading, setLoading] = useState(true); const [error, setError] = useState("");
-  const load = useCallback(async () => { setLoading(true); try { setData(await getReportsData({ period, from, to, branchId })); setError(""); } catch (loadError) { setError(loadError.message); } finally { setLoading(false); } }, [period, from, to, branchId]);
-  useEffect(() => { load(); }, [load]);
+  const refreshReports = async () => {
+    setLoading(true);
+    try {
+      const nextData = await getReportsData({ period, from, to, branchId });
+      setData(nextData);
+      setError("");
+      return nextData;
+    } catch (loadError) {
+      setError(loadError.message);
+      return null;
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      if (!isMounted) return;
+      await refreshReports();
+    };
+
+    void load();
+    return () => {
+      isMounted = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [period, from, to, branchId]);
   const reset = () => { setPeriod("MONTH"); setFrom(""); setTo(""); setBranchId("ALL"); };
   const title = useMemo(() => reportTypes[reportType], [reportType]);
   if (loading) return <PageContainer><LoadingState label="Loading reports" /></PageContainer>;
-  if (error || !data) return <PageContainer><ErrorState title="Reports unavailable" description={error} action={<Button onClick={load}>Try again</Button>} /></PageContainer>;
+  if (error || !data) return <PageContainer><ErrorState title="Reports unavailable" description={error} action={<Button onClick={() => { void refreshReports(); }}>Try again</Button>} /></PageContainer>;
   return <PageContainer><PageHeader title="Reports" description="Detailed sales, transaction, and business performance reports." meta={<Badge variant="purple">Owner only</Badge>} /><FilterBar className="mt-7 items-end"><label className="flex-1 text-sm font-medium text-slate-800">Period<Select value={period} onChange={(event) => setPeriod(event.target.value)} aria-label="Report date range" className="mt-1"><option value="TODAY">Today</option><option value="WEEK">This week</option><option value="MONTH">This month</option><option value="CUSTOM">Custom range</option></Select></label>{period === "CUSTOM" && <><label className="flex-1 text-sm font-medium text-slate-800">From<Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label="Report start date" className="mt-1" /></label><label className="flex-1 text-sm font-medium text-slate-800">To<Input type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label="Report end date" className="mt-1" /></label></>}<label className="flex-1 text-sm font-medium text-slate-800">Branch<Select value={branchId} onChange={(event) => setBranchId(event.target.value)} aria-label="Report branch" className="mt-1"><option value="ALL">All branches</option>{data.branches.map((branch) => <option key={branch.id} value={branch.id}>{branch.name}</option>)}</Select></label><label className="flex-1 text-sm font-medium text-slate-800">Report type<Select value={reportType} onChange={(event) => setReportType(event.target.value)} aria-label="Report type" className="mt-1">{Object.entries(reportTypes).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</Select></label><Button variant="ghost" onClick={reset}>Reset</Button></FilterBar><div className="mt-7"><SectionHeader title={title} description="Derived from the existing Taste It mock records." />{reportType === "SALES" && <div className="mt-5"><SalesReport data={data} /></div>}{reportType === "TRANSACTIONS" && <div className="mt-5"><TransactionsReport data={data} /></div>}{reportType === "MENU" && <div className="mt-5"><MenuReport data={data} /></div>}{reportType === "BRANCH" && <div className="mt-5"><BranchReport data={data} /></div>}{reportType === "INVENTORY" && <div className="mt-5"><InventoryReport data={data} /></div>}</div></PageContainer>;
 }

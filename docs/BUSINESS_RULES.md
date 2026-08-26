@@ -101,6 +101,8 @@ Status is derived from current stock and that ingredient's threshold.
 
 Do not hard-code one global threshold.
 
+Each inventory item also has a target stock level for restocking context. It does not affect the Normal/Low Stock/Out of Stock calculation.
+
 ---
 
 ## BR-009 — Out-of-Stock Availability

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Eye, ReceiptText, ShoppingBag, TrendingUp, Users } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useBranch } from "../../context/BranchContext";
@@ -77,15 +77,30 @@ export default function Sales() {
   const [cashier, setCashier] = useState("ALL");
   const [activeTransaction, setActiveTransaction] = useState(null);
 
-  const load = useCallback(async () => {
-    if (!currentBranch?.id || !currentUser) return;
-    setLoading(true);
-    try { setTransactions(await getPosTransactions(currentBranch.id, currentUser)); setError(""); }
-    catch (loadError) { setError(loadError.message); }
-    finally { setLoadedBranch(currentBranch.id); setLoading(false); }
-  }, [currentBranch?.id, currentUser]);
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      if (!currentBranch?.id || !currentUser) return;
+      setLoading(true);
+      try {
+        const nextTransactions = await getPosTransactions(currentBranch.id, currentUser);
+        if (isMounted) setTransactions(nextTransactions);
+        if (isMounted) setError("");
+      } catch (loadError) {
+        if (isMounted) setError(loadError.message);
+      } finally {
+        if (isMounted) {
+          setLoadedBranch(currentBranch.id);
+          setLoading(false);
+        }
+      }
+    };
 
-  useEffect(() => { load(); }, [load]);
+    void load();
+    return () => {
+      isMounted = false;
+    };
+  }, [currentBranch?.id, currentUser]);
 
   const cashiers = useMemo(() => [...new Map(transactions.map((transaction) => [transaction.cashierId, transaction.cashierName])).entries()], [transactions]);
   const filtered = useMemo(() => transactions.filter((transaction) => {

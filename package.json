@@ -1,0 +1,12 @@
+{
+  "name": "taste-it-cafe-final",
+  "version": "1.0.0",
+  "description": "Taste It Cafe Management System",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\""
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5"
+  }
+}
