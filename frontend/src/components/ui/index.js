@@ -6,3 +6,4 @@ export * from "./FormControls";
 export * from "./Overlay";
 export * from "./ContextualPopover";
 export * from "./Table";
+export * from "./FilterMenu";
