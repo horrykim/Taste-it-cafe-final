@@ -1,17 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
-import { Eye, ReceiptText, ShoppingBag, TrendingUp, Users } from "lucide-react";
+import { ReceiptText, ShoppingBag, TrendingUp, Users } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useBranch } from "../../context/BranchContext";
-import { Badge, Button, ContentCard, EmptyState, ErrorState, LoadingState, Modal, SearchInput, Select, StatCard, StatusBadge, Table, TableBody, TableCell, TableHeader, TableRow } from "../../components/ui";
-import { FilterBar, PageHeader, ResponsiveGrid, SectionHeader } from "../../components/layout/PageHeader";
+import { Button, ContentCard, EmptyState, ErrorState, LoadingState, StatCard, StatusBadge, Table, TableBody, TableCell, TableHeader, TableRow, FilterMenu } from "../../components/ui";
+import { FilterBar, ResponsiveGrid, SectionHeader } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
 import { getPosTransactions } from "../../services/mock/mockPosService";
+import TransactionDetailsDrawer from "./TransactionDetailsDrawer";
 
 const dateFormat = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });
 const numberFormat = new Intl.NumberFormat("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const money = (value) => `₱${numberFormat.format(value)}`;
-const paymentLabel = (method) => method === "GCASH" ? "GCash / E-wallet" : method === "CASH" ? "Cash" : method;
-const statusLabel = (status) => status === "COMPLETED" ? "Completed" : status;
+const paymentLabel = (method) => method === "GCASH" ? "GCash" : method === "CASH" ? "Cash" : method;
 
 function dateKey(value) {
   const date = new Date(value);
@@ -35,32 +35,7 @@ function transactionItemsLabel(items) {
 }
 
 function Status({ value }) {
-  return <StatusBadge status={value === "COMPLETED" ? "completed" : "pending"} label={statusLabel(value)} />;
-}
-
-function TransactionDetails({ transaction, branchName, onClose }) {
-  if (!transaction) return null;
-  return <Modal open onClose={onClose} title={`Transaction ${transaction.transactionId}`} className="max-h-[calc(100vh-1rem)] max-w-3xl overflow-y-auto" footer={<Button variant="outline" onClick={onClose}>Close details</Button>}>
-    <div className="space-y-5">
-      <div className="grid gap-3 rounded-xl bg-slate-50 p-4 text-sm sm:grid-cols-2">
-        <p><span className="text-slate-500">Branch:</span> {branchName}</p>
-        <p><span className="text-slate-500">Date:</span> {dateFormat.format(new Date(transaction.createdAt))}</p>
-        <p><span className="text-slate-500">Cashier:</span> {transaction.cashierName}</p>
-        <p><span className="text-slate-500">Status:</span> <Status value={transaction.status} /></p>
-        <p><span className="text-slate-500">Payment:</span> {paymentLabel(transaction.paymentMethod)}</p>
-        {transaction.paymentReference && <p><span className="text-slate-500">Reference:</span> {transaction.paymentReference}</p>}
-      </div>
-      <Table>
-        <TableHeader><TableRow><TableCell as="th">Item</TableCell><TableCell as="th">Qty</TableCell><TableCell as="th">Unit price</TableCell><TableCell as="th">Subtotal</TableCell></TableRow></TableHeader>
-        <TableBody>{transaction.items.map((item) => <TableRow key={item.menuItemId}><TableCell className="font-medium text-slate-900">{item.name}</TableCell><TableCell>{item.quantity}</TableCell><TableCell>{money(item.unitPrice)}</TableCell><TableCell>{money(item.lineTotal)}</TableCell></TableRow>)}</TableBody>
-      </Table>
-      <div className="space-y-1 border-t border-taste-border pt-4 text-right text-sm"><p>Subtotal: {money(transaction.subtotal)}</p><p className="text-lg font-bold text-slate-900">Total: {money(transaction.total)}</p></div>
-    </div>
-  </Modal>;
-}
-
-function MobileTransaction({ transaction, onView }) {
-  return <div className="rounded-xl border border-taste-border p-4"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold text-slate-900">{transaction.transactionId}</p><p className="mt-1 text-xs text-slate-500">{dateFormat.format(new Date(transaction.createdAt))}</p></div><Status value={transaction.status} /></div><div className="mt-4 grid grid-cols-2 gap-3 text-sm"><p><span className="block text-xs text-slate-500">Cashier</span>{transaction.cashierName}</p><p><span className="block text-xs text-slate-500">Items</span>{transactionItemsLabel(transaction.items)}</p><p><span className="block text-xs text-slate-500">Payment</span>{paymentLabel(transaction.paymentMethod)}</p><p><span className="block text-xs text-slate-500">Total</span><strong>{money(transaction.total)}</strong></p></div><Button variant="outline" size="sm" className="mt-4 w-full" onClick={onView}><Eye size={16} />View transaction</Button></div>;
+  return <StatusBadge status={value === "COMPLETED" ? "completed" : "pending"} label={value === "COMPLETED" ? "Completed" : value} />;
 }
 
 export default function Sales() {
@@ -102,18 +77,156 @@ export default function Sales() {
     };
   }, [currentBranch?.id, currentUser]);
 
-  const cashiers = useMemo(() => [...new Map(transactions.map((transaction) => [transaction.cashierId, transaction.cashierName])).entries()], [transactions]);
+  const cashiers = useMemo(() => {
+    const map = new Map();
+    transactions.forEach(t => {
+      if (!map.has(t.cashierId)) {
+         map.set(t.cashierId, { name: t.cashierName, role: t.cashierRole === "OWNER" ? "Owner / Manager" : "Staff" });
+      }
+    });
+    return Array.from(map.entries()).map(([id, info]) => ({ value: id, label: info.name, subtitle: info.role }));
+  }, [transactions]);
+
   const filtered = useMemo(() => transactions.filter((transaction) => {
     const term = search.toLowerCase().trim();
     const searchable = `${transaction.transactionId} ${transaction.cashierName} ${transaction.items.map((item) => item.name).join(" ")}`.toLowerCase();
     return (!term || searchable.includes(term)) && matchesDate(transaction.createdAt, date) && (payment === "ALL" || transaction.paymentMethod === payment) && (status === "ALL" || transaction.status === status) && (cashier === "ALL" || transaction.cashierId === cashier);
   }), [transactions, search, date, payment, status, cashier]);
-  const summary = useMemo(() => { const completed = transactions.filter((transaction) => transaction.status === "COMPLETED"); const total = completed.reduce((sum, transaction) => sum + transaction.total, 0); return { total, count: transactions.length, average: completed.length ? total / completed.length : 0, completed: completed.length }; }, [transactions]);
+
+  const summary = useMemo(() => { 
+    const completed = transactions.filter((transaction) => transaction.status === "COMPLETED"); 
+    const total = completed.reduce((sum, transaction) => sum + transaction.total, 0); 
+    return { total, count: transactions.length, average: completed.length ? total / completed.length : 0, completed: completed.length }; 
+  }, [transactions]);
+  
   const hasFilters = search || date !== "ALL" || payment !== "ALL" || status !== "ALL" || cashier !== "ALL";
   const clearFilters = () => { setSearch(""); setDate("ALL"); setPayment("ALL"); setStatus("ALL"); setCashier("ALL"); };
 
   if (loading || loadedBranch !== currentBranch?.id) return <PageContainer><LoadingState label="Loading sales" /></PageContainer>;
   if (error || !currentBranch) return <PageContainer><ErrorState title="Sales unavailable" description={error || "Select a branch to continue."} /></PageContainer>;
 
-  return <PageContainer><PageHeader title="Sales" description="Review completed transactions recorded through POS." meta={<Badge variant="purple">{currentBranch.name}</Badge>} /><ResponsiveGrid className="mt-7"><StatCard label="Total sales" value={money(summary.total)} icon={TrendingUp} /><StatCard label="Transactions" value={summary.count} icon={ReceiptText} /><StatCard label="Average transaction" value={money(summary.average)} icon={ShoppingBag} /><StatCard label="Completed transactions" value={summary.completed} icon={Users} /></ResponsiveGrid><FilterBar className="mt-7"><SearchInput value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search transaction, cashier, or item" aria-label="Search sales" className="sm:min-w-64 sm:max-w-sm" /><Select value={date} onChange={(event) => setDate(event.target.value)} aria-label="Filter sales by date" className="sm:max-w-44"><option value="ALL">All dates</option><option value="TODAY">Today</option><option value="YESTERDAY">Yesterday</option><option value="WEEK">This week</option><option value="MONTH">This month</option></Select><Select value={payment} onChange={(event) => setPayment(event.target.value)} aria-label="Filter sales by payment method" className="sm:max-w-48"><option value="ALL">All payment methods</option><option value="CASH">Cash</option><option value="GCASH">GCash / E-wallet</option></Select><Select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Filter sales by status" className="sm:max-w-40"><option value="ALL">All statuses</option><option value="COMPLETED">Completed</option></Select>{currentUser.role === "OWNER" && <Select value={cashier} onChange={(event) => setCashier(event.target.value)} aria-label="Filter sales by cashier" className="sm:max-w-44"><option value="ALL">All cashiers</option>{cashiers.map(([id, name]) => <option key={id} value={id}>{name}</option>)}</Select>}{hasFilters && <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button>}</FilterBar><ContentCard className="mt-7"><SectionHeader title="Transactions" description={`${filtered.length} transaction${filtered.length === 1 ? "" : "s"} for ${currentBranch.name}.`} />{filtered.length ? <><div className="mt-5 hidden lg:block"><Table><TableHeader><TableRow><TableCell as="th">Transaction ID</TableCell><TableCell as="th">Date / time</TableCell><TableCell as="th">Cashier</TableCell><TableCell as="th">Items</TableCell><TableCell as="th">Payment</TableCell><TableCell as="th">Total</TableCell><TableCell as="th">Status</TableCell><TableCell as="th">Action</TableCell></TableRow></TableHeader><TableBody>{filtered.map((transaction) => <TableRow key={transaction.id}><TableCell className="font-semibold text-slate-900">{transaction.transactionId}</TableCell><TableCell>{dateFormat.format(new Date(transaction.createdAt))}</TableCell><TableCell>{transaction.cashierName}</TableCell><TableCell>{transactionItemsLabel(transaction.items)}</TableCell><TableCell>{paymentLabel(transaction.paymentMethod)}</TableCell><TableCell className="font-semibold">{money(transaction.total)}</TableCell><TableCell><Status value={transaction.status} /></TableCell><TableCell><Button variant="ghost" size="sm" onClick={() => setActiveTransaction(transaction)}><Eye size={16} />View</Button></TableCell></TableRow>)}</TableBody></Table></div><div className="mt-5 grid gap-3 lg:hidden">{filtered.map((transaction) => <MobileTransaction key={transaction.id} transaction={transaction} onView={() => setActiveTransaction(transaction)} />)}</div></> : <div className="mt-5"><EmptyState title="No sales found" description={hasFilters ? "Try adjusting your search or filters." : "Completed POS transactions will appear here."} /></div>}</ContentCard><TransactionDetails transaction={activeTransaction} branchName={currentBranch.name} onClose={() => setActiveTransaction(null)} /></PageContainer>;
+  return (
+    <PageContainer>
+      <ResponsiveGrid className="mt-7">
+        <StatCard label="Total Sales" value={money(summary.total)} icon={TrendingUp} />
+        <StatCard label="Transactions" value={summary.count} icon={ReceiptText} />
+        <StatCard label="Average Transaction" value={money(summary.average)} icon={ShoppingBag} />
+        <StatCard label="Completed Transactions" value={summary.completed} icon={Users} />
+      </ResponsiveGrid>
+      
+      <FilterBar className="mt-7 flex flex-wrap gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <input 
+            value={search} 
+            onChange={(event) => setSearch(event.target.value)} 
+            placeholder="Search transaction, cashier..." 
+            aria-label="Search transactions" 
+            className="w-full h-10 rounded-xl border border-taste-border bg-white pl-9 pr-4 text-sm outline-none transition-colors focus:border-taste-pink focus:ring-1 focus:ring-taste-pink placeholder:text-slate-400"
+          />
+          <svg className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </div>
+
+        <FilterMenu 
+          label="Date"
+          value={date}
+          options={[
+            { value: "ALL", label: "All Dates" },
+            { value: "TODAY", label: "Today" },
+            { value: "YESTERDAY", label: "Yesterday" },
+            { value: "WEEK", label: "This Week" },
+            { value: "MONTH", label: "This Month" }
+          ]}
+          onChange={setDate}
+        />
+
+        <FilterMenu 
+          label="Payment Method"
+          value={payment}
+          options={[
+            { value: "ALL", label: "All Payment Methods" },
+            { value: "CASH", label: "Cash" },
+            { value: "GCASH", label: "GCash" }
+          ]}
+          onChange={setPayment}
+        />
+
+        <FilterMenu 
+          label="Status"
+          value={status}
+          options={[
+            { value: "ALL", label: "All Statuses" },
+            { value: "COMPLETED", label: "Completed" }
+          ]}
+          onChange={setStatus}
+        />
+
+        {currentUser.role === "OWNER" && (
+          <FilterMenu 
+            label="Cashier"
+            value={cashier}
+            options={[
+              { value: "ALL", label: "All Cashiers" },
+              ...cashiers
+            ]}
+            onChange={setCashier}
+          />
+        )}
+
+        {hasFilters && <Button variant="ghost" className="h-10 text-slate-500 hover:text-slate-800" onClick={clearFilters}>Reset</Button>}
+      </FilterBar>
+      
+      <ContentCard className="mt-7">
+        <SectionHeader title="Transactions" description={`${filtered.length} transaction${filtered.length === 1 ? "" : "s"} for ${currentBranch.name}.`} />
+        
+        {filtered.length > 0 ? (
+          <div className="mt-5 overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableCell as="th" className="text-xs font-semibold uppercase tracking-wider text-slate-500">TRANSACTION ID</TableCell>
+                  <TableCell as="th" className="text-xs font-semibold uppercase tracking-wider text-slate-500">DATE / TIME</TableCell>
+                  <TableCell as="th" className="text-xs font-semibold uppercase tracking-wider text-slate-500">CASHIER</TableCell>
+                  <TableCell as="th" className="text-xs font-semibold uppercase tracking-wider text-slate-500">ITEMS</TableCell>
+                  <TableCell as="th" className="text-xs font-semibold uppercase tracking-wider text-slate-500">PAYMENT</TableCell>
+                  <TableCell as="th" className="text-xs font-semibold uppercase tracking-wider text-slate-500">TOTAL</TableCell>
+                  <TableCell as="th" className="text-xs font-semibold uppercase tracking-wider text-slate-500">STATUS</TableCell>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((transaction) => (
+                  <TableRow 
+                    key={transaction.id} 
+                    className="cursor-pointer hover:bg-slate-50/70 transition-colors"
+                    onClick={() => setActiveTransaction(transaction)}
+                  >
+                    <TableCell className="font-semibold text-slate-900">{transaction.transactionId}</TableCell>
+                    <TableCell className="text-slate-600">{dateFormat.format(new Date(transaction.createdAt))}</TableCell>
+                    <TableCell className="text-slate-600">{transaction.cashierName}</TableCell>
+                    <TableCell className="text-slate-600">{transactionItemsLabel(transaction.items)}</TableCell>
+                    <TableCell className="text-slate-600">
+                      <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
+                        {paymentLabel(transaction.paymentMethod)}
+                      </span>
+                    </TableCell>
+                    <TableCell className="font-semibold text-slate-900">{money(transaction.total)}</TableCell>
+                    <TableCell><Status value={transaction.status} /></TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ) : (
+          <div className="mt-5">
+            <EmptyState 
+              title="No transactions found" 
+              description={hasFilters ? "No sales transactions match the current filters." : "Completed POS transactions will appear here."} 
+              action={hasFilters ? <Button variant="outline" onClick={clearFilters}>Clear Filters</Button> : undefined} 
+            />
+          </div>
+        )}
+      </ContentCard>
+
+      <TransactionDetailsDrawer transaction={activeTransaction} branchName={currentBranch.name} onClose={() => setActiveTransaction(null)} />
+    </PageContainer>
+  );
 }
