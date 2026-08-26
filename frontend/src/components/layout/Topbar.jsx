@@ -1,11 +1,11 @@
 import { Bell, CalendarDays, Menu } from "lucide-react";
-import { LogOut } from "lucide-react";
+import { LogOut, Settings } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useRef, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useBranch } from "../../context/BranchContext";
 import { pageLabels } from "../../routes/navigation";
-import { Badge, Button, ContextualPopover } from "../ui";
+import { Button, ContextualPopover } from "../ui";
 import { useOverlay } from "../../context/useOverlay";
 
 const initialNotifications = [
@@ -78,11 +78,30 @@ function Topbar({ onMenuClick }) {
         </div>
       </ContextualPopover>
 
-      <ContextualPopover open={activeOverlay === "profile"} anchorRef={profileTriggerRef} onClose={() => setActiveOverlay(null)} width={360}>
-        <div className="mb-4 flex items-center justify-between gap-3"><h2 className="text-lg font-semibold text-slate-900">Owner Profile</h2><button type="button" onClick={() => setActiveOverlay(null)} className="text-slate-400 hover:text-slate-700" aria-label="Close profile"><span aria-hidden="true">×</span></button></div>
-        <div className="flex items-center gap-4 rounded-xl bg-taste-purple-soft/45 p-4"><span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-taste-purple/30 text-lg font-bold text-taste-text">{initials}</span><div><p className="text-lg font-semibold text-slate-900">{currentUser.name}</p><Badge variant="purple">{currentUser.role === "OWNER" ? "Owner / Manager" : "Staff"}</Badge></div></div>
-        <div className="mt-5 divide-y divide-taste-border rounded-xl border border-taste-border"><div className="flex items-center justify-between gap-4 p-3"><span className="text-sm text-slate-500">Email</span><strong className="truncate text-sm text-slate-900">{currentUser.email || currentUser.username || "Not provided"}</strong></div><div className="flex items-center justify-between gap-4 p-3"><span className="text-sm text-slate-500">Current branch</span><strong className="text-sm text-slate-900">{currentBranch?.name || "Not selected"}</strong></div></div>
-        <Button variant="danger" className="mt-5 w-full" onClick={handleLogout}><LogOut size={16} />Log Out</Button>
+      <ContextualPopover open={activeOverlay === "profile"} anchorRef={profileTriggerRef} onClose={() => setActiveOverlay(null)} width={280}>
+        <div className="flex items-center gap-3 p-2">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-taste-purple/25 text-sm font-bold text-taste-text">{initials}</span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-bold text-slate-900">{currentUser.name}</p>
+            <p className="truncate text-xs text-slate-500">{currentUser.role === "OWNER" ? "Owner / Manager" : "Staff"}</p>
+          </div>
+        </div>
+        
+        <div className="my-2 border-t border-taste-border" />
+        
+        <div className="flex flex-col p-1">
+          <button type="button" onClick={() => { setActiveOverlay(null); navigate("/app/profile-settings"); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-700 transition hover:bg-slate-50 focus-visible:outline-2 focus-visible:outline-taste-purple">
+            <Settings size={16} className="text-slate-400" />
+            Profile Settings
+          </button>
+          
+          <div className="my-1 border-t border-taste-border/50 mx-2" />
+          
+          <button type="button" onClick={() => { setActiveOverlay(null); handleLogout(); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-rose-600 transition hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-rose-500">
+            <LogOut size={16} className="text-rose-500" />
+            Log Out
+          </button>
+        </div>
       </ContextualPopover>
 
       <ContextualPopover open={activeOverlay === "branch"} anchorRef={branchTriggerRef} onClose={() => setActiveOverlay(null)} width={190}>
