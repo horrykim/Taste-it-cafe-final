@@ -17,6 +17,7 @@ import Sales from "../features/sales/Sales";
 import BranchManagement from "../features/branches/BranchManagement";
 import StaffManagement from "../features/staff/StaffManagement";
 import Reports from "../features/reports/Reports";
+import ProfileSettings from "../features/profile/ProfileSettings";
 
 const placeholders = {
   dashboard: ["Dashboard", "Your branch-level operational overview will be introduced in the dashboard phase."],
@@ -57,6 +58,7 @@ function AppRoutes() {
         <Route path="/app/reports/ai" element={<ProtectedRoute allowedRoles={["OWNER"]}>{placeholder(placeholders.aiReports)}</ProtectedRoute>} />
         <Route path="/app/branches" element={<ProtectedRoute allowedRoles={["OWNER"]}><BranchManagement /></ProtectedRoute>} />
         <Route path="/app/staff" element={<ProtectedRoute allowedRoles={["OWNER"]}><StaffManagement /></ProtectedRoute>} />
+        <Route path="/app/profile-settings" element={<ProtectedRoute><ProfileSettings /></ProtectedRoute>} />
         <Route path="/app/design-system" element={<ProtectedRoute allowedRoles={["OWNER"]}><DesignSystemShowcase /></ProtectedRoute>} />
       </Route>
       <Route path="/dashboard" element={<Navigate to="/app/dashboard" replace />} />
