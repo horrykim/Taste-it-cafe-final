@@ -61,9 +61,30 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       console.warn(
         "Authentication failed:",
-        error.response?.data?.message ||
-          "Invalid or expired token."
+        error.response?.data?.message || "Invalid or expired token."
       );
+
+      // do not auto-redirect when the failing request is the session check itself
+      // Login.jsx handles its own /auth/me 401 gracefully
+      const failedUrl = error.config?.url || "";
+      const isSessionCheck = failedUrl.includes("/auth/me") || failedUrl.includes("/auth/login");
+
+      if (!isSessionCheck) {
+        // clear session
+        localStorage.removeItem("token");
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("user");
+        localStorage.removeItem("selectedBranch");
+        localStorage.removeItem("selectedBranchId");
+        localStorage.removeItem("ownerSelectedBranch");
+
+        // redirect to login if not already there
+        const path = window.location.pathname;
+        if (path !== "/" && path !== "/login") {
+          window.location.href = "/";
+        }
+      }
     }
 
     return Promise.reject(error);

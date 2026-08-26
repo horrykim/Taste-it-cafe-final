@@ -8,6 +8,7 @@ import {
 import Login from "./pages/Login";
 import OwnerDashboard from "./pages/OwnerDashboard";
 import ProtectedRoute from "./components/ProtectedRoute";
+import PublicRoute from "./components/PublicRoute";
 import MenuManagement from "./pages/MenuManagement";
 import InventoryManagement from "./pages/InventoryManagement";
 import Sales from "./pages/Sales";
@@ -15,6 +16,8 @@ import SelectBranch from "./pages/SelectBranch";
 import Staff from "./pages/Staff";
 import Report from "./pages/Report";
 import Settings from "./pages/Settings";
+import Reconciliation from "./pages/Reconciliation";
+import Profile from "./pages/Profile";
 
 function App() {
   return (
@@ -22,12 +25,25 @@ function App() {
       <Routes>
 
         {/* ==========================================
-            LOGIN
+            LOGIN - public only, redirects to /dashboard if session exists
         ========================================== */}
 
         <Route
           path="/"
-          element={<Login />}
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
+        />
+
+        <Route
+          path="/login"
+          element={
+            <PublicRoute>
+              <Login />
+            </PublicRoute>
+          }
         />
 
         {/* ==========================================
@@ -106,6 +122,32 @@ function App() {
               path="/settings"
               element={<Settings />}
             />
+
+        {/* ==========================================
+            RECONCILIATION
+        ========================================== */}
+
+        <Route
+          path="/reconciliation"
+          element={
+            <ProtectedRoute>
+              <Reconciliation />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* ==========================================
+            PROFILE
+        ========================================== */}
+
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <Profile />
+            </ProtectedRoute>
+          }
+        />
         {/* ==========================================
             UNKNOWN PAGE
         ========================================== */}

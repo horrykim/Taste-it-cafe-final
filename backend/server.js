@@ -15,6 +15,7 @@ const dashboardRoutes = require("./routes/dashboard");
 const salesRoutes = require("./routes/sales");
 const recipesRoutes = require("./routes/recipes");
 const ingredientRoutes = require("./routes/ingredients");
+const reconciliationRoutes = require("./routes/reconciliation");
 
 // ==========================================
 // CREATE APP
@@ -48,6 +49,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/sales", salesRoutes);
 app.use("/api/recipes", recipesRoutes);
 app.use("/api/ingredients", ingredientRoutes);
+app.use("/api/reconciliation", reconciliationRoutes);
 
 // ==========================================
 // TEST ROUTE

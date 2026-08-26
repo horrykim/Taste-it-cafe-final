@@ -21,6 +21,15 @@ function Sidebar() {
 
   const isOwner = currentUser?.role === "owner";
 
+  const initials = currentUser?.full_name
+    ? currentUser.full_name
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((w) => w[0].toUpperCase())
+        .join("")
+    : "TC";
+
   // ==========================================
   // MAIN MENU
   // ==========================================
@@ -45,6 +54,10 @@ function Sidebar() {
       name: "Reports",
       path: "/reports",
     },
+    {
+      name: "Reconciliation",
+      path: "/reconciliation",
+    },
 
     
   ];
@@ -60,6 +73,13 @@ function Sidebar() {
     {
       name: "Settings",
       path: "/settings",
+    },
+  ];
+
+  const accountMenuItems = [
+    {
+      name: "My Profile",
+      path: "/profile",
     },
   ];
 
@@ -154,10 +174,53 @@ function Sidebar() {
           </>
         )}
 
+        {/* Account */}
+        <p className="text-xs font-semibold text-gray-400 uppercase mt-8 mb-3 px-3">
+          Account
+        </p>
+        <div className="space-y-2">
+          {accountMenuItems.map((item) => {
+            const isActive = location.pathname === item.path;
+            return (
+              <button
+                key={item.name}
+                onClick={() => navigate(item.path)}
+                className={`w-full text-left px-4 py-3 rounded-lg transition ${
+                  isActive
+                    ? "bg-pink-100 text-pink-600 font-semibold"
+                    : "text-gray-600 hover:bg-gray-100"
+                }`}
+              >
+                {item.name}
+              </button>
+            );
+          })}
+        </div>
+
       </nav>
 
+      {/* Current user mini card */}
+      {currentUser && (
+        <div className="mx-4 mb-3 rounded-xl border border-gray-100 bg-gray-50 p-3 flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-white border flex items-center justify-center text-sm font-bold text-[#26395d] shadow-sm">
+            {initials}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-semibold text-gray-800 truncate">{currentUser.full_name || "User"}</p>
+            <p className="text-xs text-gray-500 truncate">{currentUser.email}</p>
+          </div>
+          <button
+            onClick={() => navigate("/profile")}
+            className="text-xs font-semibold text-pink-600 hover:text-pink-700"
+            title="View profile"
+          >
+            View
+          </button>
+        </div>
+      )}
+
       {/* ==========================================
-          LOGOUT
+           LOGOUT
       ========================================== */}
       <div className="px-4 py-5 border-t">
         <button

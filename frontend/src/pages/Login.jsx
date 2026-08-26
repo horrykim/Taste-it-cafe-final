@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import api from "../services/api";
 
@@ -11,6 +11,58 @@ function Login() {
   const [rememberMe, setRememberMe] = useState(false);
 
   const navigate = useNavigate();
+
+  // ======================================================
+  // SESSION: if already logged in, redirect to dashboard
+  // covers direct navigation to / or /login
+  // ======================================================
+
+  useEffect(() => {
+    const token =
+      localStorage.getItem("token") ||
+      localStorage.getItem("accessToken") ||
+      localStorage.getItem("access_token");
+    const userStr = localStorage.getItem("user");
+    if (!token || !userStr) return;
+
+    // quick expiry check - if expired, clear and stay on login
+    try {
+      const payload = JSON.parse(atob(token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("accessToken");
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("user");
+        return;
+      }
+    } catch {
+      // malformed token -> clear
+      localStorage.removeItem("token");
+      localStorage.removeItem("user");
+      return;
+    }
+
+    // verify session with backend, then redirect
+    let cancelled = false;
+    api
+      .get("/auth/me")
+      .then((res) => {
+        if (cancelled) return;
+        if (res.data?.success) {
+          navigate("/dashboard", { replace: true });
+        }
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // 401 -> token invalid/expired -> clear session and stay on login
+        // do not clear on network error
+        // interceptor will have logged warning
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [navigate]);
 
   // ======================================================
   // LOGIN
