@@ -1,4 +1,5 @@
 import axios from "axios";
+import { supabase } from "./supabase";
 
 // ======================================================
 // API CONFIGURATION
@@ -8,7 +9,6 @@ let API_URL =
   import.meta.env.VITE_API_URL ||
   "http://localhost:5000";
 
-// Auto-prefix https:// if VITE_API_URL was set as bare host (Render fromService: host)
 if (API_URL && !/^https?:\/\//i.test(API_URL)) {
   API_URL = `https://${API_URL}`;
 }
@@ -22,20 +22,21 @@ const api = axios.create({
 
 // ======================================================
 // ATTACH ACCESS TOKEN
-// ======================================================
 //
-// Every request using `api` automatically receives:
-//
-// Authorization: Bearer <JWT>
-//
+// Uses the Supabase access token stored in localStorage.
+// Falls back to legacy token keys if Supabase token not found.
 // ======================================================
 
 api.interceptors.request.use(
   (config) => {
-    const token =
+    // Priority: Supabase access token > legacy token keys
+    const supabaseToken = localStorage.getItem("sb_access_token");
+    const legacyToken =
       localStorage.getItem("token") ||
       localStorage.getItem("accessToken") ||
       localStorage.getItem("access_token");
+
+    const token = supabaseToken || legacyToken;
 
     if (token) {
       config.headers = config.headers || {};
@@ -57,29 +58,37 @@ api.interceptors.response.use(
   (response) => {
     return response;
   },
-  (error) => {
+  async (error) => {
     if (error.response?.status === 401) {
-      console.warn(
-        "Authentication failed:",
-        error.response?.data?.message || "Invalid or expired token."
-      );
-
-      // do not auto-redirect when the failing request is the session check itself
-      // Login.jsx handles its own /auth/me 401 gracefully
       const failedUrl = error.config?.url || "";
       const isSessionCheck = failedUrl.includes("/auth/me") || failedUrl.includes("/auth/login");
 
       if (!isSessionCheck) {
-        // clear session
+        // Try refreshing the Supabase session before giving up
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            localStorage.setItem("sb_access_token", session.access_token);
+            // Retry the failed request once with the refreshed token
+            error.config.headers.Authorization = `Bearer ${session.access_token}`;
+            return api.request(error.config);
+          }
+        } catch {
+          // Refresh failed — clear session
+        }
+
+        // Clear all session data
+        localStorage.removeItem("sb_access_token");
         localStorage.removeItem("token");
         localStorage.removeItem("accessToken");
         localStorage.removeItem("access_token");
         localStorage.removeItem("user");
+        localStorage.removeItem("tasteit_user");
         localStorage.removeItem("selectedBranch");
         localStorage.removeItem("selectedBranchId");
         localStorage.removeItem("ownerSelectedBranch");
 
-        // redirect to login if not already there
+        // Redirect to login if not already there
         const path = window.location.pathname;
         if (path !== "/" && path !== "/login") {
           window.location.href = "/";

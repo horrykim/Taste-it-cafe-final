@@ -3,14 +3,12 @@ import { Eye, EyeOff, LockKeyhole, UserRound } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { Alert, Button, Checkbox, FormField, IconButton, Input } from "../components/ui";
 import { useAuth } from "../context/AuthContext";
-import { useBranch } from "../context/BranchContext";
 import tasteItLogo from "../assets/login/taste-it-logo.svg";
 import coffeeCup from "../assets/login/coffee-cup.png";
 
 function Login() {
   const navigate = useNavigate();
   const { currentUser, isAuthenticated, login } = useAuth();
-  const { currentBranch } = useBranch();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
@@ -18,7 +16,10 @@ function Login() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
 
-  if (isAuthenticated) return <Navigate to={currentUser.role === "OWNER" && !currentBranch ? "/branches" : "/app/dashboard"} replace />;
+  if (isAuthenticated) {
+    const role = String(currentUser?.role || "").toUpperCase();
+    return <Navigate to={role === "OWNER" ? "/branches" : "/app/dashboard"} replace />;
+  }
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -33,7 +34,8 @@ function Login() {
     setIsSubmitting(true);
     try {
       const user = await login({ email, password });
-      navigate(user.role === "OWNER" ? "/branches" : "/app/dashboard", { replace: true });
+      const role = String(user?.role || "").toUpperCase();
+      navigate(role === "OWNER" ? "/branches" : "/app/dashboard", { replace: true });
     } catch (loginError) {
       setAuthError(loginError.message || "We could not sign you in. Please try again.");
     } finally {
