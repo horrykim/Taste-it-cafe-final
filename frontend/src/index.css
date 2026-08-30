@@ -111,10 +111,27 @@ select {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     grid-template-rows: auto auto;
   }
-
   .dashboard-column {
     display: grid;
     grid-row: span 2;
     grid-template-rows: subgrid;
+  }
+}
+
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #print-receipt, #print-receipt * {
+    visibility: visible !important;
+  }
+  #print-receipt {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 80mm;
+    margin: 0;
+    padding: 20px;
+    background: white;
   }
 }
