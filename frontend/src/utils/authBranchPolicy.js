@@ -6,7 +6,7 @@ function toText(value) {
 
 export function normalizeRole(value) {
   const normalized = toText(value).toUpperCase().replace(/[\s/_-]+/g, "");
-  if (normalized === "OWNER" || normalized === "MANAGER" || normalized === "OWNERMANAGER") {
+  if (normalized === "OWNER") {
     return "OWNER";
   }
   if (normalized === "STAFF") {
@@ -86,12 +86,12 @@ export function normalizeBranch(branch) {
     databaseId,
     name,
     code: toText(branch.code) || toText(branch.branch_code),
-    address: toText(branch.address) || toText(branch.location),
-    location: toText(branch.location) || toText(branch.address) || name,
+    address: toText(branch.address),
     contactNumber: toText(branch.contact_number) || toText(branch.contactNumber),
     email: toText(branch.email),
-    status: active ? "ACTIVE" : "INACTIVE",
-    isActive: active,
+    status: branch.is_archived ? "ARCHIVED" : active ? "ACTIVE" : "DEACTIVATED",
+    isActive: active && !branch.is_archived,
+    isArchived: Boolean(branch.is_archived),
     rawBranch: branch,
   };
 }

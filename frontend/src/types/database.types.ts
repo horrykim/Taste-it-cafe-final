@@ -113,6 +113,7 @@ export type Database = {
           email: string | null
           id: string
           is_active: boolean
+          is_archived: boolean
           name: string
           updated_at: string
         }
@@ -124,6 +125,7 @@ export type Database = {
           email?: string | null
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           name: string
           updated_at?: string
         }
@@ -135,6 +137,7 @@ export type Database = {
           email?: string | null
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           name?: string
           updated_at?: string
         }
@@ -170,6 +173,7 @@ export type Database = {
           description: string | null
           id: string
           is_active: boolean
+          is_archived: boolean
           name: string
           updated_at: string
         }
@@ -178,6 +182,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           name: string
           updated_at?: string
         }
@@ -186,6 +191,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           name?: string
           updated_at?: string
         }
@@ -199,6 +205,7 @@ export type Database = {
           description: string | null
           id: string
           is_active: boolean
+          is_archived: boolean
           name: string
           updated_at: string
         }
@@ -209,6 +216,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           name: string
           updated_at?: string
         }
@@ -219,6 +227,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           name?: string
           updated_at?: string
         }
@@ -394,6 +403,7 @@ export type Database = {
           description: string | null
           id: string
           is_active: boolean
+          is_archived: boolean
           name: string
           updated_at: string
         }
@@ -402,6 +412,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           name: string
           updated_at?: string
         }
@@ -410,6 +421,7 @@ export type Database = {
           description?: string | null
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           name?: string
           updated_at?: string
         }
@@ -423,6 +435,7 @@ export type Database = {
           id: string
           image_path: string | null
           is_active: boolean
+          is_archived: boolean
           name: string
           price: number
           updated_at: string
@@ -434,6 +447,7 @@ export type Database = {
           id?: string
           image_path?: string | null
           is_active?: boolean
+          is_archived?: boolean
           name: string
           price: number
           updated_at?: string
@@ -445,6 +459,7 @@ export type Database = {
           id?: string
           image_path?: string | null
           is_active?: boolean
+          is_archived?: boolean
           name?: string
           price?: number
           updated_at?: string
@@ -521,6 +536,7 @@ export type Database = {
           full_name: string
           id: string
           is_active: boolean
+          is_archived: boolean
           role: Database["public"]["Enums"]["user_role"]
           updated_at: string
         }
@@ -531,6 +547,7 @@ export type Database = {
           full_name: string
           id: string
           is_active?: boolean
+          is_archived?: boolean
           role: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
@@ -541,6 +558,7 @@ export type Database = {
           full_name?: string
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           role?: Database["public"]["Enums"]["user_role"]
           updated_at?: string
         }
@@ -608,6 +626,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_archived: boolean
           menu_item_id: string
           name: string | null
           updated_at: string
@@ -616,6 +635,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           menu_item_id: string
           name?: string | null
           updated_at?: string
@@ -624,6 +644,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           menu_item_id?: string
           name?: string | null
           updated_at?: string
@@ -643,6 +664,7 @@ export type Database = {
           created_at: string
           id: string
           is_active: boolean
+          is_archived: boolean
           label: string
           reason_type: Database["public"]["Enums"]["reconciliation_reason_type"]
         }
@@ -650,6 +672,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           label: string
           reason_type: Database["public"]["Enums"]["reconciliation_reason_type"]
         }
@@ -657,6 +680,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_active?: boolean
+          is_archived?: boolean
           label?: string
           reason_type?: Database["public"]["Enums"]["reconciliation_reason_type"]
         }

@@ -76,8 +76,8 @@ export default function ProtectedRoute({
     return (
        <AuthStateScreen
         tone="error"
-        title="Branch Assignment Missing"
-        description="You are not assigned to an active branch."
+        title="Branch Unavailable"
+        description="Your assigned branch is deactivated or archived. Please contact your administrator."
         action={<AuthStateAction label="Sign Out" onClick={logout} />}
       />
     );

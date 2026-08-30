@@ -13,7 +13,7 @@ import {
 
 test("normalizeRole maps supported role variants", () => {
   assert.equal(normalizeRole("owner"), "OWNER");
-  assert.equal(normalizeRole("Owner / Manager"), "OWNER");
+  assert.equal(normalizeRole("Owner / Manager"), null);
   assert.equal(normalizeRole("staff"), "STAFF");
   assert.equal(normalizeRole("cashier"), null);
 });
