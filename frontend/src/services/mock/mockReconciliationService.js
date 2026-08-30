@@ -1,4 +1,4 @@
-import { adjustStock, getInventory } from "./mockInventoryService";
+import { adjustStock, getInventory } from "../inventoryService";
 
 const STORAGE_KEY = "tasteit_reconciliations";
 const allowedRoles = new Set(["OWNER", "STAFF"]);

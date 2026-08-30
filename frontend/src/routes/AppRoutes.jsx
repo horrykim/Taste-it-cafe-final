@@ -10,7 +10,6 @@ import OwnerDashboard from "../features/dashboard/OwnerDashboard";
 import StaffDashboard from "../features/dashboard/StaffDashboard";
 import MenuManagement from "../features/menu/MenuManagement";
 import InventoryManagement from "../features/inventory/InventoryManagement";
-import InventoryHistory from "../features/inventory/InventoryHistory";
 import Reconciliation from "../features/reconciliation/Reconciliation";
 import POS from "../features/pos/POS";
 import Sales from "../features/sales/Sales";
@@ -49,7 +48,6 @@ function AppRoutes() {
       <Route element={<ProtectedRoute requireBranchForOwner><AppLayout /></ProtectedRoute>}>
         <Route path="/app/dashboard" element={<DashboardRoute />} />
         <Route path="/app/inventory" element={<InventoryManagement />} />
-        <Route path="/app/inventory/history" element={<ProtectedRoute allowedRoles={["OWNER"]}><InventoryHistory /></ProtectedRoute>} />
         <Route path="/app/reconciliation" element={<Reconciliation />} />
         <Route path="/app/sales" element={<ProtectedRoute allowedRoles={["OWNER", "STAFF"]}><Sales /></ProtectedRoute>} />
         <Route path="/app/pos" element={<ProtectedRoute allowedRoles={["OWNER", "STAFF"]}><POS /></ProtectedRoute>} />

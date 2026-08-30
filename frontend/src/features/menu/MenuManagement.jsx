@@ -5,8 +5,8 @@ import { useBranch } from "../../context/BranchContext";
 import { Badge, Button, ConfirmDialog, EmptyState, ErrorState, LoadingState, Modal, Select, SearchInput, StatusBadge, Toast } from "../../components/ui";
 import { ContentSection, FilterBar, PageHeader } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
-import { deleteMenuCategory, deleteMenuItem, getMockMenuData, saveMenuCategory, saveMenuItem, setMenuAvailability } from "../../services/mock/mockMenuService";
-import { getMockIngredients } from "../../services/mock/mockIngredientService";
+import { deleteMenuCategory, deleteMenuItem, getMockMenuData, saveMenuCategory, saveMenuItem, setMenuAvailability } from "../../services/menuService";
+import { getInventory } from "../../services/inventoryService";
 import { getInventoryStatus } from "../../utils/inventoryStatus";
 import CategoryManagerModal from "./components/CategoryManagerModal";
 import MenuItemCard from "./components/MenuItemCard";
@@ -33,7 +33,7 @@ function MenuManagement() {
 
   useEffect(() => {
     let isCurrent = true;
-    Promise.all([getMockMenuData(currentBranch?.id), getMockIngredients(currentBranch?.id)])
+    Promise.all([getMockMenuData(currentBranch?.id), getInventory(currentBranch?.id)])
       .then(([data, ingredientData]) => { if (isCurrent) { setMenuData(data); setIngredients(ingredientData); setError(""); } })
       .catch((loadError) => { if (isCurrent) setError(loadError.message); })
       .finally(() => { if (isCurrent) setIsLoading(false); });

@@ -5,7 +5,7 @@ import { useBranch } from "../../context/BranchContext";
 import { Button, ContentCard, EmptyState, ErrorState, LoadingState, StatCard, StatusBadge, Table, TableBody, TableCell, TableHeader, TableRow, FilterMenu } from "../../components/ui";
 import { FilterBar, ResponsiveGrid, SectionHeader } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
-import { getPosTransactions } from "../../services/mock/mockPosService";
+import { getPosTransactions } from "../../services/salesService";
 import TransactionDetailsDrawer from "./TransactionDetailsDrawer";
 
 const dateFormat = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });

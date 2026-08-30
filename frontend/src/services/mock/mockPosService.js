@@ -1,5 +1,5 @@
-import { adjustStock, getInventory } from "./mockInventoryService";
-import { getMockMenuData } from "./mockMenuService";
+import { adjustStock, getInventory } from "../inventoryService";
+import { getMockMenuData } from "../menuService";
 
 const STORAGE_KEY = "tasteit_sales";
 const roles = new Set(["OWNER", "STAFF"]);

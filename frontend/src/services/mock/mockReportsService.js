@@ -1,6 +1,6 @@
 import { getBranchRecords } from "./mockBranchService";
-import { getInventory } from "./mockInventoryService";
-import { getMockMenuData } from "./mockMenuService";
+import { getInventory } from "../inventoryService";
+import { getMockMenuData } from "../menuService";
 
 const SALES_STORAGE_KEY = "tasteit_sales";
 const clone = (value) => structuredClone(value);

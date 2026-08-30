@@ -16,10 +16,10 @@ import { Button, Card, ContextualPopover, FormField, Input, Modal, Select, Toast
 import { useAuth } from "../../context/AuthContext";
 import { useBranch } from "../../context/BranchContext";
 import MenuItemModal from "../menu/components/MenuItemModal";
-import { getMockDashboardData } from "../../services/mock/mockDashboardService";
-import { getInventory } from "../../services/mock/mockInventoryService";
-import { getMockMenuData, saveMenuItem } from "../../services/mock/mockMenuService";
-import { getPosTransactions } from "../../services/mock/mockPosService";
+import { getDashboardData } from "../../services/dashboardService";
+import { getInventory } from "../../services/inventoryService";
+import { getMockMenuData, saveMenuItem } from "../../services/menuService";
+import { getPosTransactions } from "../../services/salesService";
 import { useOverlay } from "../../context/useOverlay";
 import SalesTrendChart from "./components/SalesTrendChart";
 
@@ -121,7 +121,7 @@ function OwnerDashboard() {
   const loadDashboardData = async () => {
     if (!currentBranch?.id) return;
     const [dashboardData, menuDataResult, inventoryData, transactionData] = await Promise.all([
-      getMockDashboardData(currentBranch.id),
+      getDashboardData(currentBranch.id),
       getMockMenuData(currentBranch.id),
       getInventory(currentBranch.id),
       getPosTransactions(currentBranch.id, currentUser),
@@ -155,7 +155,7 @@ function OwnerDashboard() {
   const refreshData = async () => {
     if (!currentBranch?.id) return;
     const [dashboardData, menuDataResult, inventoryData, transactionData] = await Promise.all([
-      getMockDashboardData(currentBranch.id),
+      getDashboardData(currentBranch.id),
       getMockMenuData(currentBranch.id),
       getInventory(currentBranch.id),
       getPosTransactions(currentBranch.id, currentUser),

@@ -1,24 +1,21 @@
 import { useState } from "react";
 import { Button, FormField, Input, Modal, Select } from "../../../components/ui";
 
-const units = ["pc", "g", "kg", "ml", "L", "packs", "bottles", "boxes"];
 
 function itemForm(item) {
   return {
     name: item?.name ?? "",
-    category: item?.category ?? "",
-    unit: item?.unit ?? "",
+    categoryId: item?.categoryId ?? "",
+    unitId: item?.unitId ?? "",
+    description: item?.description ?? "",
     imageUrl: item?.imageUrl ?? "",
     currentQuantity: item?.currentQuantity?.toString() ?? "0",
     lowStockThreshold: item?.lowStockThreshold?.toString() ?? "",
-    targetStockLevel: item?.targetStockLevel?.toString() ?? "",
-    costPerUnit: item?.costPerUnit?.toString() ?? "",
-    supplier: item?.supplier ?? "",
     active: item?.active ?? true,
   };
 }
 
-export function InventoryItemModal({ item, categories, onClose, onSave }) {
+export function InventoryItemModal({ item, categories, units, onClose, onSave }) {
   const [form, setForm] = useState(() => itemForm(item));
   const [error, setError] = useState("");
 
@@ -28,30 +25,20 @@ export function InventoryItemModal({ item, categories, onClose, onSave }) {
     event.preventDefault();
     const quantity = Number(form.currentQuantity);
     const low = Number(form.lowStockThreshold);
-    const target = Number(form.targetStockLevel);
-    const cost = form.costPerUnit === "" ? undefined : Number(form.costPerUnit);
 
-    if (!form.name.trim() || !form.category || !form.unit) {
+    if (!form.name.trim() || !form.categoryId || !form.unitId) {
       return setError("Name, category, and unit are required.");
     }
-    if (![quantity, low, target].every(Number.isFinite) || quantity < 0 || low < 0 || target < 0) {
+    if (![quantity, low].every(Number.isFinite) || quantity < 0 || low < 0) {
       return setError("Quantity and thresholds must be zero or greater.");
-    }
-    if (cost !== undefined && (!Number.isFinite(cost) || cost < 0)) {
-      return setError("Cost per unit must be zero or greater.");
-    }
-    if (target < low) {
-      return setError("Target stock level must be at least the low-stock threshold.");
     }
 
     onSave({
       ...form,
       name: form.name.trim(),
-      supplier: form.supplier.trim(),
+      description: form.description.trim(),
       currentQuantity: quantity,
       lowStockThreshold: low,
-      targetStockLevel: target,
-      costPerUnit: cost,
     });
   };
 
@@ -83,18 +70,18 @@ export function InventoryItemModal({ item, categories, onClose, onSave }) {
         </FormField>
         <div className="grid gap-4 sm:grid-cols-2">
           <FormField label="Category" required>
-            <Select value={form.category} onChange={(event) => update("category", event.target.value)}>
+            <Select value={form.categoryId} onChange={(event) => update("categoryId", event.target.value)}>
               <option value="">Select category</option>
-              {categories.map((category) => (
-                <option key={category}>{category}</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
               ))}
             </Select>
           </FormField>
           <FormField label="Unit" required>
-            <Select value={form.unit} onChange={(event) => update("unit", event.target.value)}>
+            <Select value={form.unitId} onChange={(event) => update("unitId", event.target.value)}>
               <option value="">Select unit</option>
-              {units.map((unit) => (
-                <option key={unit}>{unit}</option>
+              {units.map((u) => (
+                <option key={u.id} value={u.id}>{u.name}</option>
               ))}
             </Select>
           </FormField>
@@ -103,20 +90,12 @@ export function InventoryItemModal({ item, categories, onClose, onSave }) {
           <FormField label={item ? "Current quantity" : "Initial quantity"} required>
             <Input type="number" min="0" step="0.01" value={form.currentQuantity} onChange={(event) => update("currentQuantity", event.target.value)} />
           </FormField>
-          <FormField label="Cost per unit">
-            <Input type="number" min="0" step="0.01" value={form.costPerUnit} onChange={(event) => update("costPerUnit", event.target.value)} />
-          </FormField>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
           <FormField label="Low-stock threshold" required>
             <Input type="number" min="0" step="0.01" value={form.lowStockThreshold} onChange={(event) => update("lowStockThreshold", event.target.value)} />
           </FormField>
-          <FormField label="Target stock level" required>
-            <Input type="number" min="0" step="0.01" value={form.targetStockLevel} onChange={(event) => update("targetStockLevel", event.target.value)} />
-          </FormField>
         </div>
-        <FormField label="Supplier">
-          <Input value={form.supplier} onChange={(event) => update("supplier", event.target.value)} />
+        <FormField label="Description">
+          <Input value={form.description} onChange={(event) => update("description", event.target.value)} />
         </FormField>
       </form>
     </Modal>

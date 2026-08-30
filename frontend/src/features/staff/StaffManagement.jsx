@@ -5,7 +5,7 @@ import { useBranch } from "../../context/BranchContext";
 import { Alert, Badge, Button, ConfirmDialog, ContentCard, Dropdown, EmptyState, ErrorState, FormField, Input, LoadingState, Modal, SearchInput, Select, StatusBadge, Table, TableBody, TableCell, TableHeader, TableRow, Textarea, Toast } from "../../components/ui";
 import { FilterBar, PageHeader, SectionHeader } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
-import { createStaff, listStaff, updateStaff, updateStaffStatus } from "../../services/mock/mockStaffService";
+import { createStaff, listStaff, updateStaff, updateStaffStatus } from "../../services/staffService";
 
 const initialForm = { name: "", email: "", phone: "", branchId: "", password: "", newPassword: "", notes: "" };
 const dateFormat = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium" });

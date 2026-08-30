@@ -1,41 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button, Drawer, StatusBadge } from "../../../components/ui";
-import { useBranch } from "../../../context/BranchContext";
-import { getInventoryHistory } from "../../../services/mock/mockInventoryService";
-import { Clock, History, AlertCircle, TrendingUp, TrendingDown } from "lucide-react";
+import { AlertCircle, History, SlidersHorizontal, Zap } from "lucide-react";
+import { getInventoryHistory } from "../../../services/inventoryService";
+import { hasMoreHistory } from "../../../utils/inventoryHistory";
+import { InventoryHistoryList } from "./InventoryHistoryList";
+import { ItemHistoryModal } from "./ItemHistoryModal";
 
 const formatNumber = (value) => new Intl.NumberFormat("en-PH", { maximumFractionDigits: 2 }).format(value);
 const dateFormat = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });
 
-function ActivityItem({ entry }) {
-  const isAdd = entry.change.startsWith("+");
-  const isRemove = entry.change.startsWith("-");
-  const Icon = isAdd ? TrendingUp : isRemove ? TrendingDown : Clock;
-  
+const STATUS_GRADIENT = {
+  normal: "from-emerald-50 to-teal-50 border-emerald-200",
+  "low-stock": "from-amber-50 to-orange-50 border-amber-200",
+  "out-of-stock": "from-rose-50 to-pink-50 border-rose-200",
+};
+
+function StockGauge({ current, threshold, status }) {
+  const max = Math.max(threshold * 3, current, 1);
+  const pct = Math.min((current / max) * 100, 100);
+  const barColor =
+    status === "out-of-stock" ? "bg-rose-400" :
+    status === "low-stock" ? "bg-amber-400" :
+    "bg-emerald-400";
+
   return (
-    <div className="flex gap-4">
-      <div className={`mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-        isAdd ? "bg-emerald-50 text-emerald-600" :
-        isRemove ? "bg-rose-50 text-rose-600" :
-        "bg-slate-100 text-slate-500"
-      }`}>
-        <Icon size={16} />
+    <div className="mt-3">
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/60">
+        <div
+          className={`h-full rounded-full transition-all duration-700 ${barColor}`}
+          style={{ width: `${pct}%` }}
+        />
       </div>
-      <div className="flex-1 space-y-1">
-        <div className="flex items-center justify-between gap-2">
-          <p className="text-sm font-semibold text-slate-900">{entry.type}</p>
-          <span className={`text-sm font-bold ${
-            isAdd ? "text-emerald-600" :
-            isRemove ? "text-rose-600" :
-            "text-slate-900"
-          }`}>
-            {entry.change}
-          </span>
-        </div>
-        <p className="text-xs text-slate-500">{entry.reason}</p>
-        <p className="text-xs font-medium text-slate-400">
-          {entry.user?.name || entry.user} • {dateFormat.format(new Date(entry.timestamp))}
-        </p>
+      <div className="mt-1.5 flex justify-between text-xs opacity-60">
+        <span>0</span>
+        <span>Threshold: {formatNumber(threshold)}</span>
       </div>
     </div>
   );
@@ -43,177 +41,239 @@ function ActivityItem({ entry }) {
 
 export function InventoryDetailsDrawer({
   selected,
+  branchId,
   onClose,
   isOwner,
   setAdjustItem,
+  onReconcileItem,
   setEditItem,
   setThresholdItem,
-  setHistoryItem,
+  setDeactivateItem,
 }) {
-  const { currentBranch } = useBranch();
-  const [recentActivity, setRecentActivity] = useState([]);
-  const [loadingActivity, setLoadingActivity] = useState(false);
+  const [historyEntries, setHistoryEntries] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [showFullHistory, setShowFullHistory] = useState(false);
+  const recentHistoryLimit = 5;
 
   useEffect(() => {
-    if (!selected || !currentBranch) return;
-    
     let active = true;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLoadingActivity(true);
-    
-    getInventoryHistory(currentBranch.id, selected.id).then(data => {
-      if (active) {
-        setRecentActivity(data.slice(0, 3)); // Only show top 3 most recent
-        setLoadingActivity(false);
-      }
-    }).catch(() => {
-      if (active) setLoadingActivity(false);
-    });
+
+    if (selected?.id && branchId) {
+      (async () => {
+        setHistoryLoading(true);
+        setHistoryError("");
+
+        try {
+          const entries = await getInventoryHistory(branchId, selected.id);
+          if (!active) return;
+          setHistoryEntries(entries);
+        } catch (error) {
+          if (!active) return;
+          setHistoryError(error.message);
+          setHistoryEntries([]);
+        } finally {
+          if (active) {
+            setHistoryLoading(false);
+          }
+        }
+      })();
+    }
 
     return () => { active = false; };
-  }, [selected, currentBranch]);
+  }, [branchId, selected?.id]);
+
+  const recentHistory = useMemo(
+    () => historyEntries.slice(0, recentHistoryLimit),
+    [historyEntries]
+  );
+
+  const retryHistory = () => {
+    if (!selected?.id || !branchId) return;
+    setHistoryLoading(true);
+    setHistoryError("");
+    getInventoryHistory(branchId, selected.id)
+      .then((entries) => setHistoryEntries(entries))
+      .catch((error) => {
+        setHistoryError(error.message);
+        setHistoryEntries([]);
+      })
+      .finally(() => setHistoryLoading(false));
+  };
 
   if (!selected) return null;
+
+  const gradientClass = STATUS_GRADIENT[selected.status] ?? "from-slate-50 to-white border-slate-200";
 
   return (
     <Drawer
       open={!!selected}
       onClose={onClose}
-      title="Ingredient Details"
+      title="Item Details"
       footer={
-        <div className="space-y-3 w-full">
+        <div className="w-full space-y-3">
           <Button
-            className="w-full bg-taste-purple hover:bg-taste-purple-strong text-white py-6 shadow-sm"
+            className="w-full gap-2 border border-taste-purple/20 bg-white py-6 text-taste-purple shadow-sm hover:bg-taste-purple-soft"
+            onClick={() => onReconcileItem?.(selected)}
+          >
+            <History size={16} /> Reconcile This Item
+          </Button>
+          <Button
+            className="w-full gap-2 bg-taste-purple py-6 text-white shadow-sm hover:bg-taste-purple-strong"
             onClick={() => setAdjustItem(selected)}
           >
-            Adjust Stock
+            <Zap size={16} /> Adjust Stock
           </Button>
           {isOwner && (
             <div className="grid grid-cols-3 gap-2">
-              <Button variant="outline" className="w-full bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100" onClick={() => setEditItem(selected)}>
+              <Button variant="outline" className="w-full gap-1 bg-slate-50 text-xs text-slate-700 hover:bg-slate-100" onClick={() => setEditItem(selected)}>
                 Edit
               </Button>
-              <Button variant="outline" className="w-full bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100" onClick={() => setThresholdItem(selected)}>
-                Thresholds
+              <Button variant="outline" className="w-full gap-1 bg-slate-50 text-xs text-slate-700 hover:bg-slate-100" onClick={() => setThresholdItem(selected)}>
+                <SlidersHorizontal size={12} /> Threshold
               </Button>
-              <Button variant="outline" className="w-full bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100" onClick={() => setHistoryItem(selected)}>
-                History
+              <Button variant="outline" className="w-full gap-1 bg-slate-50 text-xs text-slate-700 hover:bg-slate-100" onClick={() => onClose?.()}>
+                Close
               </Button>
             </div>
           )}
         </div>
       }
     >
-      <div className="space-y-8 pb-8">
-        
-        {/* HEADER AREA */}
-        <div>
-          <div className="flex items-start justify-between gap-4">
+      <div className="space-y-6 pb-8">
+        <div className={`rounded-2xl border bg-gradient-to-br p-5 ${gradientClass}`}>
+          <div className="mb-1 flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-2xl font-extrabold text-taste-heading">{selected.name}</h3>
-              <div className="flex items-center gap-2 mt-2">
-                <span className="inline-flex items-center rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
-                  {selected.category}
-                </span>
-                {selected.supplier && (
-                  <>
-                    <span className="text-slate-300">•</span>
-                    <span className="text-sm font-medium text-slate-500">{selected.supplier}</span>
-                  </>
-                )}
-              </div>
+              <h3 className="text-2xl font-extrabold leading-tight text-slate-900">{selected.name}</h3>
+              <span className="mt-2 inline-flex items-center rounded-full border border-white/40 bg-white/60 px-2.5 py-0.5 text-xs font-semibold text-slate-600 backdrop-blur-sm">
+                {selected.category}
+              </span>
             </div>
+            <StatusBadge status={selected.status} />
+          </div>
+
+          <div className="mt-4">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-500">Current Quantity</p>
+            <div className="flex items-baseline gap-1.5">
+              <span className="text-5xl font-black leading-none tabular-nums text-slate-900">
+                {formatNumber(selected.currentQuantity)}
+              </span>
+              <span className="text-xl font-bold text-slate-500">{selected.unit}</span>
+            </div>
+            <StockGauge
+              current={selected.currentQuantity}
+              threshold={selected.lowStockThreshold}
+              status={selected.status}
+            />
           </div>
         </div>
-        
-        {/* STOCK SUMMARY (FLATTENED) */}
+
+        {selected.status === "low-stock" && (
+          <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <AlertCircle size={16} className="shrink-0 text-amber-500" />
+            <p>Below minimum threshold - consider restocking soon.</p>
+          </div>
+        )}
+        {selected.status === "out-of-stock" && (
+          <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+            <AlertCircle size={16} className="shrink-0 text-rose-500" />
+            <p>This item is completely out of stock.</p>
+          </div>
+        )}
+
         <div>
-          <h4 className="mb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Current Status</h4>
-          <div className="flex items-center gap-6">
+          <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Stock Threshold</h4>
+          <div className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
             <div>
-              <p className="text-sm font-medium text-slate-500 mb-1">Quantity</p>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-4xl font-extrabold text-slate-900">{formatNumber(selected.currentQuantity)}</span>
-                <span className="text-lg font-semibold text-slate-500">{selected.unit}</span>
-              </div>
+              <p className="mb-0.5 text-xs font-semibold text-slate-500">Low-stock alert at</p>
+              <p className="text-lg font-bold text-slate-800">
+                {formatNumber(selected.lowStockThreshold)}
+                <span className="ml-1 text-sm font-medium text-slate-500">{selected.unit}</span>
+              </p>
             </div>
-            <div className="h-12 w-px bg-slate-200"></div>
-            <div>
-              <p className="text-sm font-medium text-slate-500 mb-2">Status</p>
-              <StatusBadge status={selected.status} />
+            {isOwner && (
+              <button
+                type="button"
+                onClick={() => setThresholdItem(selected)}
+                className="text-xs font-semibold text-taste-purple transition-colors hover:text-taste-purple-strong"
+              >
+                Edit
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <h4 className="mb-3 text-xs font-bold uppercase tracking-wider text-slate-500">Details</h4>
+          <div className="overflow-hidden divide-y divide-slate-100 rounded-xl border border-slate-100">
+            <div className="flex items-center justify-between bg-white px-4 py-3 text-sm">
+              <span className="font-medium text-slate-500">Unit Measure</span>
+              <span className="font-semibold text-slate-900">{selected.unit}</span>
+            </div>
+            {selected.description && (
+              <div className="bg-white px-4 py-3 text-sm">
+                <span className="mb-1 block font-medium text-slate-500">Description</span>
+                <span className="leading-relaxed text-slate-700">{selected.description}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between bg-white px-4 py-3 text-sm">
+              <span className="font-medium text-slate-500">Last Updated</span>
+              <span className="font-semibold text-slate-900">{dateFormat.format(new Date(selected.lastUpdated))}</span>
             </div>
           </div>
         </div>
 
-        {/* THRESHOLDS (FLATTENED) */}
         <div>
-          <h4 className="mb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Stock Thresholds</h4>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="mb-3 flex items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-medium text-slate-500 mb-1">Minimum (Low)</p>
-              <p className="text-xl font-bold text-slate-800">{formatNumber(selected.lowStockThreshold)} <span className="text-sm font-medium text-slate-500">{selected.unit}</span></p>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">Recent Activity</h4>
+              <p className="mt-1 text-sm text-slate-500">Latest movements for this item.</p>
             </div>
-            <div>
-              <p className="text-sm font-medium text-slate-500 mb-1">Maximum (Target)</p>
-              <p className="text-xl font-bold text-slate-800">{formatNumber(selected.targetStockLevel)} <span className="text-sm font-medium text-slate-500">{selected.unit}</span></p>
-            </div>
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-500">
+              <History size={16} />
+            </span>
           </div>
-          {selected.status === "low-stock" && (
-            <div className="mt-4 flex items-center gap-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-800 border border-amber-200">
-              <AlertCircle size={16} className="text-amber-500 shrink-0" />
-              <p>This item is currently below its minimum threshold and should be restocked.</p>
-            </div>
-          )}
+
+          <InventoryHistoryList
+            entries={recentHistory}
+            compact
+            loading={historyLoading}
+            error={historyError}
+            emptyTitle="No recent activity recorded"
+            emptyDescription="There are no recorded inventory movements for this item yet."
+            loadingLabel="Loading item history"
+            onRetry={retryHistory}
+            footerAction={hasMoreHistory(historyEntries, recentHistoryLimit) ? (
+              <Button variant="outline" className="w-full" onClick={() => setShowFullHistory(true)}>
+                View Full History
+              </Button>
+            ) : null}
+          />
         </div>
-        
-        {/* ITEM INFORMATION */}
-        <div>
-          <h4 className="mb-4 text-xs font-bold text-slate-500 uppercase tracking-wider">Details</h4>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between border-b border-slate-100 pb-3">
-              <span className="text-slate-500 font-medium">Unit Measure</span>
-              <span className="font-semibold text-slate-900">{selected.unit}</span>
-            </div>
-            <div className="flex justify-between border-b border-slate-100 pb-3">
-              <span className="text-slate-500 font-medium">Cost per unit</span>
-              <span className="font-semibold text-slate-900">
-                {selected.costPerUnit !== undefined ? `₱${formatNumber(selected.costPerUnit)}` : "Not set"}
-              </span>
-            </div>
-            <div className="flex justify-between border-b border-slate-100 pb-3">
-              <span className="text-slate-500 font-medium">Last Updated</span>
-              <span className="font-semibold text-slate-900">
-                {dateFormat.format(new Date(selected.lastUpdated))}
-              </span>
-            </div>
+
+        {isOwner && (
+          <div className="mt-6 border-t border-slate-100 pt-4 text-center">
+            <button
+              type="button"
+              onClick={() => setDeactivateItem(selected)}
+              className="text-xs font-semibold text-rose-500 transition-colors hover:text-rose-600"
+            >
+              Deactivate Item
+            </button>
           </div>
-        </div>
-        
-        {/* RECENT ACTIVITY */}
-        <div>
-          <div className="mb-4 flex items-center justify-between">
-            <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Recent Activity</h4>
-            <Button variant="ghost" size="sm" className="h-auto p-0 text-taste-purple font-semibold hover:bg-transparent" onClick={() => setHistoryItem(selected)}>
-              View all
-            </Button>
-          </div>
-          
-          {loadingActivity ? (
-            <div className="py-4 text-center text-sm text-slate-400">Loading activity...</div>
-          ) : recentActivity.length > 0 ? (
-            <div className="space-y-5">
-              {recentActivity.map(entry => (
-                <ActivityItem key={entry.id} entry={entry} />
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center">
-              <History className="mx-auto mb-2 text-slate-300" size={24} />
-              <p className="text-sm font-medium text-slate-500">No recent activity</p>
-            </div>
-          )}
-        </div>
+        )}
       </div>
+
+      {showFullHistory ? (
+        <ItemHistoryModal
+          itemName={selected.name}
+          entries={historyEntries}
+          loading={historyLoading}
+          error={historyError}
+          onRetry={retryHistory}
+          onClose={() => setShowFullHistory(false)}
+        />
+      ) : null}
     </Drawer>
   );
 }

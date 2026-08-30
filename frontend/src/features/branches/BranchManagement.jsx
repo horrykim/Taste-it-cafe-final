@@ -5,7 +5,7 @@ import { useBranch } from "../../context/BranchContext";
 import { Alert, Button, ConfirmDialog, ContentCard, EmptyState, ErrorState, FormField, Input, LoadingState, Modal, SearchInput, Select, StatusBadge, Textarea, Toast } from "../../components/ui";
 import { FilterBar, PageHeader, SectionHeader } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
-import { getBranches, saveBranch, setBranchStatus } from "../../services/mock/mockBranchService";
+import { getBranches, saveBranch, setBranchStatus } from "../../services/branchService";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const initialForm = { name: "", code: "", address: "", contactNumber: "", email: "", managerName: "", openingTime: "08:00", closingTime: "21:00", operatingDays: DAYS, notes: "" };

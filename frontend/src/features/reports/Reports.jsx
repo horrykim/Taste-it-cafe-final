@@ -3,7 +3,7 @@ import { BarChart3, Boxes, ChartNoAxesCombined, ClipboardList, TrendingUp } from
 import { Badge, Button, ContentCard, EmptyState, ErrorState, Input, LoadingState, Select, StatCard, StatusBadge, Table, TableBody, TableCell, TableHeader, TableRow } from "../../components/ui";
 import { FilterBar, PageHeader, ResponsiveGrid, SectionHeader } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
-import { getReportsData } from "../../services/mock/mockReportsService";
+import { getReportsData } from "../../services/reportsService";
 
 const money = (value) => `₱${Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const dateFormat = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium" });

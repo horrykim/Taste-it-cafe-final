@@ -5,8 +5,8 @@ import { Button, Card, EmptyState, ErrorState, LoadingState, Modal, StatusBadge 
 import PageContainer from "../../components/layout/PageContainer";
 import { useAuth } from "../../context/AuthContext";
 import { useBranch } from "../../context/BranchContext";
-import { getInventory } from "../../services/mock/mockInventoryService";
-import { getPosTransactions } from "../../services/mock/mockPosService";
+import { getInventory } from "../../services/inventoryService";
+import { getPosTransactions } from "../../services/salesService";
 
 const money = (value) => `₱${Number(value).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const dateFormat = new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeStyle: "short" });

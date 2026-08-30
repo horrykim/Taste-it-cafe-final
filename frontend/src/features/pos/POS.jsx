@@ -5,7 +5,7 @@ import { useBranch } from "../../context/BranchContext";
 import { Badge, Button, ContentCard, EmptyState, ErrorState, Input, LoadingState, Modal, SearchInput, Select, Toast } from "../../components/ui";
 import { FilterBar, PageHeader } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
-import { createPosTransaction, getPosCatalogData } from "../../services/mock/mockPosService";
+import { createPosTransaction, getPosCatalogData } from "../../services/salesService";
 import MenuImage from "../menu/components/MenuImage";
 
 const money = (value) => `₱${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
