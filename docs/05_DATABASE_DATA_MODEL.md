@@ -13,26 +13,30 @@ exact implementation details.
 
 ## 2. Core Entities
 
-The data model must support at minimum:
+The data model includes the following application tables:
 
--   profiles
 -   branches
+-   profiles
 -   menu_categories
+-   inventory_categories
+-   units
+-   unit_conversions
+-   inventory_items
 -   menu_items
 -   recipes
--   recipe_items / recipe_ingredients
--   inventory_items
+-   recipe_ingredients
 -   branch_inventory
--   unit definitions/conversions as required by the approved schema
--   inventory transactions/history
--   reconciliation records
 -   sales
 -   sale_items
--   payment information
--   staff/branch relationships through profiles
+-   reconciliation_reasons
+-   inventory_reconciliations
+-   inventory_movements
 -   notifications
--   report/query support as required
--   AI access to approved system data
+-   reports
+-   ai_business_reports
+-   user_preferences
+
+*(Note: `database_test_runs` is a temporary/development database artifact, not an application table.)*
 
 ## 3. Data Modeling Principles
 
