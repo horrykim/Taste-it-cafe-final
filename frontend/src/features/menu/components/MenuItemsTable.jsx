@@ -55,11 +55,16 @@ function MenuItemsTable({ items, categories, isOwner, onToggle, onDetails, onEdi
               <SelectCheckbox ref={selectAllRef} checked={allSelected} indeterminate={someSelected} onChange={onToggleSelectAll} label="Select all menu items" />
             </TableCell>
           )}
-          <TableCell as="th">Menu Item</TableCell>
-          <TableCell as="th">Category</TableCell>
-          <TableCell as="th">Price</TableCell>
-          <TableCell as="th">Status</TableCell>
-          <TableCell as="th">Updated</TableCell>
+          {/* `w-full max-w-0` is what makes truncation possible at all: in a
+              table's default auto layout a cell grows to fit its content, so a
+              long description widened the whole table and forced a horizontal
+              scrollbar. max-w-0 lets this column shrink, w-full lets it take
+              whatever space the fixed-width columns leave over. */}
+          <TableCell as="th" className="w-full max-w-0">Menu Item</TableCell>
+          <TableCell as="th" className="whitespace-nowrap">Category</TableCell>
+          <TableCell as="th" className="whitespace-nowrap">Price</TableCell>
+          <TableCell as="th" className="whitespace-nowrap">Status</TableCell>
+          <TableCell as="th" className="whitespace-nowrap">Updated</TableCell>
           {/* Fixed width + right padding so the kebab button never sits
               flush against the table's outer edge. */}
           <TableCell as="th" className="w-16 text-right"><span className="sr-only">Actions</span></TableCell>
@@ -82,22 +87,25 @@ function MenuItemsTable({ items, categories, isOwner, onToggle, onDetails, onEdi
                   <SelectCheckbox checked={isSelected} onChange={() => onToggleSelect(item.id)} label={`Select ${item.name}`} />
                 </TableCell>
               )}
-              <TableCell>
+              <TableCell className="w-full max-w-0">
                 <div className="flex items-center gap-3">
                   <MenuImage imageUrl={item.imageUrl} alt={item.name} className="h-11 w-11 shrink-0 rounded-lg" />
-                  <div className="min-w-0">
-                    <p className="truncate font-semibold text-slate-900">{item.name}</p>
-                    <p className="truncate text-xs text-slate-500">{item.description || "No description"}</p>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-semibold text-slate-900" title={item.name}>{item.name}</p>
+                    {/* Truncated on purpose — the full description is shown in
+                        the item details view. `title` gives the whole text on
+                        hover without changing the row height. */}
+                    <p className="truncate text-xs text-slate-500" title={item.description || undefined}>{item.description || "No description"}</p>
                   </div>
                 </div>
               </TableCell>
-              <TableCell>
+              <TableCell className="whitespace-nowrap">
                 <CategoryBadge name={category?.name ?? "Uncategorized"} colorId={category?.color} />
               </TableCell>
-              <TableCell className="font-medium text-slate-900">
+              <TableCell className="whitespace-nowrap font-medium text-slate-900">
                 ₱{item.price.toLocaleString("en-PH", { minimumFractionDigits: 2 })}
               </TableCell>
-              <TableCell onClick={isOwner ? (event) => event.stopPropagation() : undefined}>
+              <TableCell className="whitespace-nowrap" onClick={isOwner ? (event) => event.stopPropagation() : undefined}>
                 {isOwner ? (
                   <Toggle
                     label={item.status === "ACTIVE" ? "Active" : "Inactive"}

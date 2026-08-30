@@ -5,8 +5,7 @@ import { useBranch } from "../../context/BranchContext";
 import { Button, Card, CategoryBadge, ConfirmDialog, EmptyState, ErrorState, LoadingState, Modal, SearchInput, StatCard, StatusBadge, Toast } from "../../components/ui";
 import { ResponsiveGrid } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
-import { deleteMenuCategory, deleteMenuItem, getMockMenuData, saveMenuCategory, saveMenuItem, setMenuAvailability } from "../../services/mock/mockMenuService";
-import { getMockIngredients } from "../../services/mock/mockIngredientService";
+import { deleteMenuCategory, deleteMenuItem, getIngredients, getMenuData, saveMenuCategory, saveMenuItem, setMenuAvailability } from "../../services/menuService";
 import { getInventoryStatus } from "../../utils/inventoryStatus";
 import { getCategoryColor } from "../../utils/categoryColors";
 import CategoriesTab from "./components/CategoriesTab";
@@ -68,7 +67,9 @@ function MenuManagement() {
 
   useEffect(() => {
     let isCurrent = true;
-    Promise.all([getMockMenuData(currentBranch?.id), getMockIngredients(currentBranch?.id)])
+    if (!currentBranch?.id) { setIsLoading(false); return undefined; }
+    setIsLoading(true);
+    Promise.all([getMenuData(currentBranch.id), getIngredients(currentBranch.id)])
       .then(([data, ingredientData]) => { if (isCurrent) { setMenuData(data); setIngredients(ingredientData); setError(""); } })
       .catch((loadError) => { if (isCurrent) setError(loadError.message); })
       .finally(() => { if (isCurrent) setIsLoading(false); });
@@ -120,7 +121,7 @@ function MenuManagement() {
 
   // Header stat summary. Note: "Best Selling Category" from the reference
   // design needs real sales data this app doesn't track yet (no units-sold
-  // field anywhere in the menu/sales mock data), so it isn't shown here —
+  // field anywhere in the menu data), so it isn't shown here —
   // showing a fabricated number would be worse than omitting it. In its
   // place: how many categories currently have at least one active item,
   // which is a real, honest metric from data we actually have.
@@ -162,7 +163,7 @@ function MenuManagement() {
     ],
   }];
 
-  const reloadMenu = async () => setMenuData(await getMockMenuData(currentBranch.id));
+  const reloadMenu = async () => setMenuData(await getMenuData(currentBranch.id));
 
   const handleToggle = async (itemId, isAvailable) => {
     try {
@@ -350,7 +351,7 @@ function MenuManagement() {
                     onToggleSelectAll={toggleSelectAll}
                   />
                 ) : (
-                  <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">
                     {filteredItems.map((item) => (
                       <MenuItemCard
                         key={item.id}
@@ -444,7 +445,7 @@ function MenuManagement() {
         onClose={() => setPendingDelete(null)}
         onConfirm={confirmDeleteItem}
         title="Delete menu item?"
-        description={`Remove ${pendingDelete?.name ?? "this menu item"} from the ${currentBranch.name} menu? This action only changes the current mock session.`}
+        description={`Remove ${pendingDelete?.name ?? "this menu item"} from the ${currentBranch.name} menu?`}
         confirmLabel="Delete item"
         danger
       />
@@ -454,7 +455,7 @@ function MenuManagement() {
         onClose={() => setBulkDeleteOpen(false)}
         onConfirm={confirmBulkDelete}
         title="Delete selected menu items?"
-        description={`Remove ${selectedIds.size} item${selectedIds.size === 1 ? "" : "s"} from the ${currentBranch.name} menu? This action only changes the current mock session.`}
+        description={`Remove ${selectedIds.size} item${selectedIds.size === 1 ? "" : "s"} from the ${currentBranch.name} menu?`}
         confirmLabel={`Delete ${selectedIds.size} item${selectedIds.size === 1 ? "" : "s"}`}
         danger
       />
