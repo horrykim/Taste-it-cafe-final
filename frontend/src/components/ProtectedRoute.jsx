@@ -13,6 +13,7 @@ export default function ProtectedRoute({
     isLoading: isAuthLoading,
     profileState,
     currentUser,
+    authUser,
     error: authError,
     logout,
   } = useAuth();
@@ -55,6 +56,15 @@ export default function ProtectedRoute({
 
   if (profileState !== "active" || !currentUser) {
     return <Navigate to="/login" replace />;
+  }
+
+  const isPasswordChangeRoute = window.location.pathname === "/change-password";
+  if (authUser?.user_metadata?.requires_password_change) {
+     if (!isPasswordChangeRoute) {
+        return <Navigate to="/change-password" replace />;
+     }
+  } else if (isPasswordChangeRoute) {
+     return <Navigate to="/" replace />;
   }
 
   if (allowedRoles && !allowedRoles.includes(currentUser.role)) {

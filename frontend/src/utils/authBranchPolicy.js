@@ -63,6 +63,8 @@ export function normalizeProfile(profile, authUser) {
     isActive: active,
     branchDatabaseId: profile.branch_id ?? profile.branchId ?? null,
     branchId: profile.branch_id ?? profile.branchId ?? null,
+    employeeId: profile.employee_id || "",
+    avatarUrl: profile.avatar_url || null,
     phone:
       toText(profile.phone) ||
       toText(profile.phone_number) ||
@@ -114,11 +116,11 @@ export function resolveCurrentBranch(currentUser, branches, storedValue) {
   }
 
   if (currentUser.role === "STAFF") {
-    return (
+    const staffBranch =
       branches.find((branch) => branch.databaseId === currentUser.branchDatabaseId) ??
       branches.find((branch) => branch.id === currentUser.branchId) ??
-      null
-    );
+      null;
+    return staffBranch?.isActive ? staffBranch : null;
   }
 
   const selected = resolveStoredBranch(branches, storedValue);

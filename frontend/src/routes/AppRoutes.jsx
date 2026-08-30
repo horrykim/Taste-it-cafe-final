@@ -17,6 +17,7 @@ import BranchManagement from "../features/branches/BranchManagement";
 import StaffManagement from "../features/staff/StaffManagement";
 import Reports from "../features/reports/Reports";
 import ProfileSettings from "../features/profile/ProfileSettings";
+import ChangePassword from "../features/auth/ChangePassword";
 
 const placeholders = {
   dashboard: ["Dashboard", "Your branch-level operational overview will be introduced in the dashboard phase."],
@@ -44,6 +45,7 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<Navigate to="/login" replace />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/change-password" element={<ProtectedRoute><ChangePassword /></ProtectedRoute>} />
       <Route path="/branches" element={<ProtectedRoute allowedRoles={["OWNER"]}><BranchSelection /></ProtectedRoute>} />
       <Route element={<ProtectedRoute requireBranchForOwner><AppLayout /></ProtectedRoute>}>
         <Route path="/app/dashboard" element={<DashboardRoute />} />
