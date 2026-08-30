@@ -1,6 +1,11 @@
 import { supabase } from "./supabase";
 import { getMenuData } from "./menuService";
 import { getInventory } from "./inventoryService";
+import {
+  applyCompleteSaleRpcFields,
+  buildConfirmedSaleSummary,
+  mapCompleteSaleErrorMessage,
+} from "../utils/posSale";
 
 // Map sale to UI format
 function mapSale(row) {
@@ -90,11 +95,19 @@ export async function getPosCatalogData(branchId) {
   return { categories, items: nextItems };
 }
 
-// eslint-disable-next-line no-unused-vars
-export async function createPosTransaction(branchId, cart, payment, _user) {
+export async function createPosTransaction(branchId, cart, payment, user) {
   if (!cart.length) throw new Error("Add at least one menu item before completing the sale.");
   if (!["CASH", "GCASH"].includes(payment.method)) throw new Error("Select a valid payment method.");
   if (payment.method === "GCASH" && !payment.reference?.trim()) throw new Error("Enter the GCash / E-wallet reference number.");
+  const parsedCashReceived = payment.method === "CASH" ? Number(payment.cashReceived) : null;
+  if (payment.method === "CASH") {
+    if (!Number.isFinite(parsedCashReceived)) {
+      throw new Error("Please enter the amount of cash received.");
+    }
+    if (parsedCashReceived < 0) {
+      throw new Error("Enter a valid cash amount.");
+    }
+  }
   
   // Format the items array for the RPC
   const rpcItems = cart.map(line => ({
@@ -102,8 +115,8 @@ export async function createPosTransaction(branchId, cart, payment, _user) {
     quantity: line.quantity
   }));
 
-  // Ensure cash received is passed if provided, otherwise null
-  const cashReceived = payment.method === "CASH" && payment.cashReceived ? Number(payment.cashReceived) : null;
+  // Ensure cash received is passed only for cash sales.
+  const cashReceived = parsedCashReceived;
   const gcashRef = payment.method === "GCASH" ? payment.reference.trim() : null;
 
   // We are blocked from doing this sequentially in React, we MUST use the RPC
@@ -118,23 +131,43 @@ export async function createPosTransaction(branchId, cart, payment, _user) {
 
   if (error) {
     console.error("Supabase complete_sale Error:", error);
-    // Give user friendly error if it's an RLS or constraint error
-    if (error.message.includes("Insufficient stock")) {
-      throw new Error("One or more items do not have enough inventory stock to complete the sale.");
-    }
-    throw new Error(`Transaction failed: ${error.message}`);
+    throw new Error(mapCompleteSaleErrorMessage(error));
   }
 
-  // The RPC returns the sale record ID, so we fetch it back to get the full mapped object
-  if (data && data.sale_id) {
-     const { data: saleData } = await supabase
-       .from("sales")
-       .select(`*, profiles(full_name), sale_items(*)`)
-       .eq("id", data.sale_id)
-       .maybeSingle();
-       
-     if (saleData) return mapSale(saleData);
+  if (!data?.sale_id) {
+    throw new Error("We couldn't verify the completed sale. Please check Sales history before retrying.");
   }
-  
-  throw new Error("Transaction completed but could not be verified locally.");
+
+  // The RPC confirms the committed sale. We then fetch full receipt data for the UI.
+  const { data: saleData, error: saleFetchError } = await supabase
+    .from("sales")
+    .select(`*, profiles(full_name), sale_items(*)`)
+    .eq("id", data.sale_id)
+    .maybeSingle();
+
+  if (saleFetchError) {
+    console.error("Supabase complete_sale post-fetch Error:", saleFetchError);
+  }
+
+  if (saleData) {
+    return {
+      sale: applyCompleteSaleRpcFields(mapSale(saleData), data),
+      receiptReady: true,
+      warning: "",
+    };
+  }
+
+  return {
+    sale: buildConfirmedSaleSummary({
+      branchId,
+      payment: {
+        ...payment,
+        cashReceived,
+      },
+      rpcResult: data,
+      user,
+    }),
+    receiptReady: false,
+    warning: "Sale completed successfully, but the receipt could not be loaded. Please confirm it in Sales history.",
+  };
 }

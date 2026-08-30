@@ -6,11 +6,15 @@ import { Badge, Button, ContentCard, EmptyState, ErrorState, Input, LoadingState
 import { FilterBar, PageHeader } from "../../components/layout/PageHeader";
 import PageContainer from "../../components/layout/PageContainer";
 import { createPosTransaction, getPosCatalogData } from "../../services/salesService";
+import PrintableReceipt from "../../components/receipts/PrintableReceipt";
 import MenuImage from "../menu/components/MenuImage";
 
 const money = (value) => `₱${Number(value || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 function Receipt({ sale, branchName, onClose, onNew }) {
+  const amountReceived = sale.paymentMethod === "CASH" ? sale.cashReceived : null;
+  const change = sale.paymentMethod === "CASH" ? sale.changeAmount : null;
+
   return (
     <Modal
       open
@@ -57,6 +61,7 @@ function Receipt({ sale, branchName, onClose, onNew }) {
           {sale.paymentReference && <span> · Ref: {sale.paymentReference}</span>}
         </p>
       </div>
+      <PrintableReceipt transaction={sale} branchName={branchName} amountReceived={amountReceived} change={change} />
     </Modal>
   );
 }
@@ -74,6 +79,7 @@ export default function POS() {
   const [amountReceived, setAmountReceived] = useState("");
   const [reference, setReference] = useState("");
   const [sale, setSale] = useState(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [toast, setToast] = useState({ open: false, message: "", variant: "success" });
   const branchId = currentBranch?.id;
 
@@ -130,11 +136,24 @@ export default function POS() {
 
   const subtotal = useMemo(() => cart.reduce((sum, line) => sum + line.price * line.quantity, 0), [cart]);
   const cartCount = useMemo(() => cart.reduce((sum, line) => sum + line.quantity, 0), [cart]);
-  const enteredCash = Number(amountReceived || 0);
-  const cashChange = paymentMethod === "CASH" ? Math.max(enteredCash - subtotal, 0) : 0;
-  const insufficientCash = paymentMethod === "CASH" && subtotal > 0 && enteredCash < subtotal;
-  const hasValidPayment = paymentMethod === "CASH" ? subtotal > 0 && !insufficientCash : Boolean(reference.trim());
-  const canComplete = cart.length > 0 && hasValidPayment;
+  const cashInput = amountReceived.trim();
+  const enteredCash = cashInput ? Number(amountReceived) : Number.NaN;
+  const hasCashAmount = cashInput.length > 0;
+  const validCashAmount = hasCashAmount && Number.isFinite(enteredCash);
+  const insufficientCash = paymentMethod === "CASH" && validCashAmount && subtotal > 0 && enteredCash < subtotal;
+  const cashValidationMessage =
+    paymentMethod !== "CASH"
+      ? ""
+      : !hasCashAmount
+        ? "Please enter the amount of cash received."
+        : !validCashAmount
+          ? "Enter a valid cash amount."
+          : insufficientCash
+            ? "Amount received is insufficient."
+            : "";
+  const cashChange = paymentMethod === "CASH" && validCashAmount ? Math.max(enteredCash - subtotal, 0) : 0;
+  const hasValidPayment = paymentMethod === "CASH" ? !cashValidationMessage : Boolean(reference.trim());
+  const canComplete = cart.length > 0 && hasValidPayment && !isSubmitting;
 
   const addToCart = (item) => {
     if (!item.available) {
@@ -173,26 +192,39 @@ export default function POS() {
   };
 
   const handleCompleteSale = async () => {
-    if (!currentBranch?.id || !currentUser || !canComplete) return;
+    if (!currentBranch?.id || !currentUser || !canComplete || isSubmitting) return;
 
+    setIsSubmitting(true);
     try {
       const result = await createPosTransaction(
         currentBranch.id,
         cart,
         {
           method: paymentMethod,
+          cashReceived: paymentMethod === "CASH" ? enteredCash : undefined,
           reference: paymentMethod === "GCASH" ? reference.trim() : "",
         },
         currentUser
       );
 
-      setSale(result);
+      if (result.receiptReady) {
+        setSale(result.sale);
+      } else {
+        setSale(null);
+      }
       setCart([]);
       resetPayment();
-      notify(`Sale completed successfully. Transaction #${result.transactionId}`, "success");
+      notify(
+        result.warning
+          ? `Sale completed successfully. Transaction #${result.sale.transactionId}. ${result.warning}`
+          : `Sale completed successfully. Transaction #${result.sale.transactionId}`,
+        result.warning ? "warning" : "success"
+      );
       await refreshCatalog();
     } catch (errorItem) {
       notify(errorItem.message || "Unable to complete the sale.", "danger");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -282,7 +314,7 @@ export default function POS() {
                           Out of stock
                         </Button>
                       ) : (
-                        <Button className="w-full" size="sm" onClick={() => addToCart(item)}>
+                        <Button className="w-full" size="sm" disabled={isSubmitting} onClick={() => addToCart(item)}>
                           Add to Cart
                         </Button>
                       )}
@@ -327,7 +359,7 @@ export default function POS() {
             </div>
 
             {cart.length > 0 && (
-              <Button variant="ghost" size="sm" onClick={() => setCart([])}>
+              <Button variant="ghost" size="sm" disabled={isSubmitting} onClick={() => setCart([])}>
                 Clear
               </Button>
             )}
@@ -353,6 +385,7 @@ export default function POS() {
                       type="button"
                       aria-label={`Remove ${line.name}`}
                       className="text-slate-400 transition hover:text-rose-600"
+                      disabled={isSubmitting}
                       onClick={() => removeItem(line.menuItemId)}
                     >
                       <Trash2 size={16} />
@@ -365,6 +398,7 @@ export default function POS() {
                         type="button"
                         aria-label={`Decrease quantity for ${line.name}`}
                         className="flex h-8 w-8 items-center justify-center rounded-lg border border-taste-border bg-white text-slate-700"
+                        disabled={isSubmitting}
                         onClick={() => updateQuantity(line.menuItemId, -1)}
                       >
                         <Minus size={16} />
@@ -374,6 +408,7 @@ export default function POS() {
                         type="button"
                         aria-label={`Increase quantity for ${line.name}`}
                         className="flex h-8 w-8 items-center justify-center rounded-lg border border-taste-border bg-white text-slate-700"
+                        disabled={isSubmitting}
                         onClick={() => updateQuantity(line.menuItemId, 1)}
                       >
                         <Plus size={16} />
@@ -406,7 +441,7 @@ export default function POS() {
               <div className="space-y-3">
                 <label className="block text-sm font-medium text-slate-700">
                   Payment method
-                  <Select value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value)} className="mt-1.5 w-full" aria-label="Select payment method">
+                  <Select value={paymentMethod} disabled={isSubmitting} onChange={(event) => setPaymentMethod(event.target.value)} className="mt-1.5 w-full" aria-label="Select payment method">
                     <option value="CASH">Cash</option>
                     <option value="GCASH">GCash / QR</option>
                   </Select>
@@ -421,6 +456,7 @@ export default function POS() {
                         min="0"
                         step="0.01"
                         value={amountReceived}
+                        disabled={isSubmitting}
                         onChange={(event) => setAmountReceived(event.target.value)}
                         className="mt-1.5 w-full"
                         placeholder="0.00"
@@ -435,8 +471,8 @@ export default function POS() {
                       </div>
                     </div>
 
-                    {insufficientCash && (
-                      <p className="text-sm text-rose-600">Amount received is insufficient.</p>
+                    {cashValidationMessage && (
+                      <p className="text-sm text-rose-600">{cashValidationMessage}</p>
                     )}
                   </>
                 ) : (
@@ -445,6 +481,7 @@ export default function POS() {
                       Reference Number
                       <Input
                         value={reference}
+                        disabled={isSubmitting}
                         onChange={(event) => setReference(event.target.value)}
                         className="mt-1.5 w-full"
                         placeholder="e.g. 123456789"
@@ -461,9 +498,9 @@ export default function POS() {
                 </div>
               </div>
 
-              <Button className="w-full" size="lg" disabled={!canComplete} onClick={handleCompleteSale}>
+              <Button className="w-full" size="lg" loading={isSubmitting} disabled={!canComplete} onClick={handleCompleteSale}>
                 <ReceiptText size={16} />
-                Complete Sale
+                {isSubmitting ? "Completing Sale..." : "Complete Sale"}
               </Button>
             </div>
           )}
