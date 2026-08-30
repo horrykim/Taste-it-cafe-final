@@ -5,14 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "test": "node --test",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.112.3",
+    "@supabase/supabase-js": "^2.112.4",
     "@tailwindcss/vite": "^4.3.3",
-    "axios": "^1.19.0",
     "lucide-react": "^1.32.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",

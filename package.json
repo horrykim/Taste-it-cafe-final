@@ -4,9 +4,9 @@
   "description": "Taste It Cafe Management System",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\""
-  },
-  "devDependencies": {
-    "concurrently": "^10.0.5"
+    "dev": "npm --prefix frontend run dev",
+    "test": "npm --prefix frontend run test",
+    "lint": "npm --prefix frontend run lint",
+    "build": "npm --prefix frontend run build"
   }
 }
